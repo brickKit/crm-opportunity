@@ -1,0 +1,51 @@
+id: crm/opportunity                   # 必须与 component.yaml 一致，be-ops 校验
+version: 1.0.0
+
+asset:
+  source_type: open_standard
+  assembly_role: optional
+  contract_lock: strict
+  customization_guide: |
+    阶段推进约束（任意跳转/必须顺序/跳阶段要审批）或赢单转订单的自动化
+    程度超出标准版时：
+    1. 主管理员在客户电脑本地复制本目录为定制目录（如 crm-opportunity-acme），改 git remote。
+    2. 用 AI 在 backend/ 生成定制业务代码。
+    3. 严禁对 contracts/ 做破坏性变更；只允许在末尾追加新字段、使用新 Tag 编号——
+       erp-sales、各类 BFF 未来都会消费 crm.opportunity.won.v1（§3.4 铁律 3）。
+    4. 把定制目录声明成 local 安装源并排在标准源前面（§3.4.1 遮蔽机制）。
+    ⚠️ metadata.id 与 version 一个字都不能改——改了所有依赖方的
+       CRM_OPPORTUNITY_ENDPOINT 会整个消失。
+
+    ⚠️ 设计计划 §8 指出"赢单转订单：自动还是人工确认""阶段推进的约束"
+    两处"多种实现都合理"的分歧，但**都不能做成 slot**——本组件将来
+    必然被 crm-* 其它组件依赖，两条只能走 customer_fork（§5.11 硬约束）。
+
+domain: crm
+tier: backend
+
+edge_routes:
+  - { path: /crm/opportunity/**, auth: required }
+
+menus:
+  - { key: crm.opportunity, title: 商机管理, permission: crm.opportunity.view }
+
+data:
+  schema: crm_opportunity              # registry/schemas.tsv
+  role:   crm_opportunity_rw           # 只用于 SET LOCAL ROLE，从不登录，因此不进 brickkit.yaml
+
+# org（dept_path 前缀）+ owner（owner_id 相等）两维（设计书 §14.2.2），
+# 与 erp-sales 完全一致——这是刻意的：赢单转订单时订单要继承商机的
+# 归属，两边维度对不上就会出现"商机我看得见、转出来的订单我看不见"
+# （设计计划 §1）。
+data_scopes:
+  - { dimension: org,   column: dept_path, mode: prefix, tables: [opportunities] }
+  - { dimension: owner, column: owner_id,  mode: equals, tables: [opportunities] }
+
+permissions:
+  - { key: crm.opportunity.view, title: 查看商机,   type: page   }
+  - { key: crm.opportunity.edit, title: 编辑商机,   type: action }
+  # ⚠️ 赢单单独一个权限键，不与普通编辑合并——它会触发建单、锁库存、
+  # 生成应收一整条链路，是本组件唯一有下游财务影响的动作（设计计划 §3）。
+  - { key: crm.opportunity.win,  title: 商机赢单,   type: action }
+
+shell: go-backoffice                  # 合并部署时进外壳二（§13.2）

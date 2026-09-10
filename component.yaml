@@ -1,0 +1,76 @@
+apiVersion: brickkit/v1
+kind: Component
+
+metadata:
+  id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
+  name: 商机管理
+  version: 1.0.0                     # 精确版本，不接受 ^ / ~ / latest
+  description: 商机全生命周期、漏斗与赢单预测原始数据、赢单事件——阶段三第一个业务组件，CRM 与 ERP 零同步边仅事件握手
+  license: Apache-2.0
+  vendor: brickKit
+
+tags: [crm, opportunity, sales-funnel]
+
+artifacts:
+  - type: api-contract
+    format: protobuf
+    files:
+      - contracts/crm/opportunity/v1/opportunity.proto
+      - contracts/events/opportunity.events.json
+  - type: api-contract
+    format: openapi
+    files: [contracts/opportunity.openapi.yaml]
+  - type: metadata                   # ← assembly.yaml 靠这一条随组件分发（§3.5）
+    files: [assembly.yaml]
+
+# 两条强依赖，都是只读枢纽的 BatchGet（设计计划 §5）：建商机/商机行时
+# 校验客户与产品存在、取展示快照——建档那一刻就要挡住脏数据。
+#
+# ⚠️ 明确不依赖 erp-sales/erp-inventory/erp-finance/infra-workflow——
+# §1.4 铁律：CRM 与 ERP 零同步边，仅事件握手（设计计划 §6）。附录 E
+# 那条"商机赢单→建订单"链路看起来像该建一条同步边，实际上正是这条
+# 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
+dependencies:
+  components:
+    - mdm/customer@1.0.3
+    - mdm/product@1.0.3
+  resources:
+    # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
+    #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
+    - { kind: database, engine: postgresql }   # 产品名：不在替换范围
+    - { kind: mq,       engine: nats }         # 产品名：换 Kafka 是一次迁移，要让平台阻断
+
+configSchema:
+  type: object
+  properties:
+    pgSchema:                        # ⚠️ 不能叫 databaseSchema，DATABASE_ 是保留前缀
+      type: string
+      default: crm_opportunity
+    iamJwksUrl:                      # JWT 本地验签的公钥来源。不对 IAM 建依赖边（决策 87）
+      type: string
+    authzBundleUrl:                  # 功能权限判定的 bundle 轮询地址，指向 infra-authz。不建依赖边
+      type: string
+    otelBaseUrl:                     # ⚠️ 不能叫 otelEndpoint，*_ENDPOINT 是保留后缀
+      type: string
+      default: ""                    # 空 → Blackhole Exporter，零成本（§7.5）
+
+deployment:
+  type: container
+  image: brickenterprise/crm-opportunity:1.0.0
+  port: 8102                         # 端口册 registry/ports.tsv
+  extraPorts:
+    - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
+  labels:                            # 平台只搬运，不解释键值。值必须是字符串
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8102"
+    prometheus.io/path: "/metrics"
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }  # 无 TCC 编排、无补偿链，比 erp-sales 轻
+
+migration:
+  command: ["./migrate", "up"]
+
+healthCheck:
+  type: http
+  path: /healthz                     # ⚠️ 只查本进程存活，严禁查库或查依赖组件（§12.3.6）
+  # startPeriodSeconds 不写：默认就是 60，Go 组件够用（§12.3.5）

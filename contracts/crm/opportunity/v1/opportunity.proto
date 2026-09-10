@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package crm.opportunity.v1;
+
+option go_package = "github.com/brickKit/crm-opportunity/gen/crm/opportunity/v1;opportunityv1";
+
+import "google/protobuf/timestamp.proto";
+
+// 商机管理服务。CRM 与 ERP 零同步边，仅事件握手（设计计划 §1.4、§6）：
+// 本服务没有任何 rpc 会被 erp-sales 调用，赢单转订单走 crm.opportunity.won.v1
+// 事件，不是同步调用。
+service OpportunityService {
+  // ── 命令 ──
+  rpc CreateOpportunity(CreateOpportunityRequest) returns (CreateOpportunityResponse);
+  rpc UpdateOpportunity(UpdateOpportunityRequest) returns (UpdateOpportunityResponse);
+  rpc ChangeStage       (ChangeStageRequest)       returns (ChangeStageResponse);
+  // ⭐ 链路的扳机：转 WON + 写 Outbox（事件字段见 contracts/events/opportunity.events.json）
+  rpc MarkWon (MarkWonRequest)  returns (MarkWonResponse);
+  rpc MarkLost(MarkLostRequest) returns (MarkLostResponse);
+
+  // ── 读 ──
+  rpc GetOpportunity        (GetOpportunityRequest)        returns (Opportunity);
+  // BatchGet 是 BFF 层 GraphQL Resolver 防 N+1 的唯一合法调用方式（§3.8）。
+  rpc BatchGetOpportunities (BatchGetOpportunitiesRequest) returns (BatchGetOpportunitiesResponse);
+  // 漏斗视图的数据源，走 ScopeFilter（org/owner 两维，设计计划 §1）。
+  rpc ListOpportunities     (ListOpportunitiesRequest)     returns (ListOpportunitiesResponse);
+  // 阶段清单是数据不是代码（设计计划 §2.2），迁移播种；前端的阶段选择器
+  // 与漏斗视图都要读它，所以是本服务唯一暴露"配置型主数据"的读接口。
+  rpc ListStages            (ListStagesRequest)            returns (ListStagesResponse);
+}
+
+enum OpportunityStatus {
+  OPPORTUNITY_STATUS_UNSPECIFIED = 0;
+  OPPORTUNITY_STATUS_OPEN        = 1;
+  OPPORTUNITY_STATUS_WON         = 2;
+  OPPORTUNITY_STATUS_LOST        = 3;
+  OPPORTUNITY_STATUS_CANCELLED   = 4;
+}
+
+// 商机行：这次机会打算卖哪些产品、多少量、什么价。⚠️ quoted_unit_price
+// 是报价快照，不是权威价格——erp-sales 赢单转订单时会用自己的定价引擎
+// 重算（设计计划 §2.1）。
+message OpportunityItem {
+  string product_id        = 1;   // 不透明外键，来自 mdm-product
+  string product_sku       = 2;   // 快照
+  string product_name      = 3;   // 快照
+  string uom_id            = 4;
+  string qty               = 5;   // decimal-as-string，同金额字段的理由
+  string quoted_unit_price = 6;   // ⚠️ 金额一律用 string 传 decimal，绝不用 double
+  string subtotal          = 7;
+}
+
+message Opportunity {
+  string   id                   = 1;
+  string   name                 = 2;
+  string   customer_id          = 3;   // 不透明外键，来自 mdm-customer
+  string   customer_name        = 4;   // 快照
+  string   owner_id             = 5;
+  string   dept_id              = 6;
+  string   dept_path            = 7;
+  string   stage_id             = 8;
+  string   stage_name           = 9;   // 读时关联 opportunity_stages 拼出来的展示字段，不落库
+  repeated OpportunityItem items = 10;
+  string   expected_amount      = 11;  // ⚠️ 金额一律用 string 传 decimal
+  int32    probability          = 12;  // 0-100，阶段带默认值 + 允许手工覆盖（设计计划 §9 第 4 条）
+  string   weighted_amount      = 13;  // ⭐ = expected_amount × probability，算出来不存（设计计划 §2）
+  google.protobuf.Timestamp expected_close_date = 14;
+  OpportunityStatus status      = 15;
+  string   currency             = 16;
+  string   lost_reason          = 17;
+  google.protobuf.Timestamp won_at = 18;   // 未赢单时为零值
+  int64    version               = 19;
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp updated_at = 21;
+}
+
+message OpportunityStage {
+  string id                  = 1;
+  string code                = 2;
+  string name                = 3;
+  int32  sort_order          = 4;
+  int32  default_probability = 5;
+  bool   is_final            = 6;
+}
+
+message CreateOpportunityItemInput {
+  string product_id        = 1;
+  string qty               = 2;
+  string quoted_unit_price = 3;
+}
+
+message CreateOpportunityRequest {
+  // ⚠️ 所有写命令基于业务单号实现严格幂等（§4.6）。
+  string idempotency_key = 1;
+  string name            = 2;
+  string customer_id     = 3;
+  repeated CreateOpportunityItemInput items = 4;
+  string expected_amount = 5;
+  // 留空（未设置）则用初始阶段的 default_probability；proto3 optional
+  // 让"没传"和"传了 0"可区分（设计计划 §9 第 4 条：阶段带默认值 + 允许
+  // 手工覆盖，0 也是一个合法的手工覆盖值）。
+  optional int32 probability = 6;
+  google.protobuf.Timestamp expected_close_date = 7;
+  string currency = 8;   // 留空则服务端按本位币默认值处理
+}
+message CreateOpportunityResponse { Opportunity opportunity = 1; }
+
+message UpdateOpportunityRequest {
+  string idempotency_key = 1;
+  string id              = 2;
+  int64  version         = 3;   // 乐观锁：与库里不一致则拒绝
+  string name            = 4;
+  string expected_amount = 5;
+  google.protobuf.Timestamp expected_close_date = 6;
+  string owner_id        = 7;   // 改负责人
+}
+message UpdateOpportunityResponse { Opportunity opportunity = 1; }
+
+message ChangeStageRequest {
+  string idempotency_key = 1;
+  string id              = 2;
+  string to_stage_id     = 3;
+  // 留空则用目标阶段的 default_probability，同 CreateOpportunityRequest
+  // 的判据。
+  optional int32 probability_override = 4;
+}
+message ChangeStageResponse { Opportunity opportunity = 1; }
+
+message MarkWonRequest {
+  string idempotency_key = 1;
+  string id              = 2;
+}
+message MarkWonResponse { Opportunity opportunity = 1; }
+
+message MarkLostRequest {
+  string idempotency_key = 1;
+  string id              = 2;
+  string reason          = 3;   // 必填：失单必须记原因（设计计划 §8，借鉴 Odoo loss reason）
+}
+message MarkLostResponse { Opportunity opportunity = 1; }
+
+message GetOpportunityRequest { string id = 1; }
+
+message BatchGetOpportunitiesRequest  { repeated string ids = 1; }
+message BatchGetOpportunitiesResponse {
+  // 只返回找到的。缺失的 id 不报错——由调用方自己判断
+  repeated Opportunity opportunities = 1;
+  repeated string      missing_ids   = 2;
+}
+
+message ListOpportunitiesRequest {
+  // ⚠️ 禁止深 Offset，强制 Cursor Pagination（决策 53）。
+  string cursor        = 1;
+  int32  page_size     = 2;
+  string customer_id   = 3;
+  OpportunityStatus status_filter = 4;
+  string stage_id_filter = 5;
+  google.protobuf.Timestamp created_after  = 6;
+  google.protobuf.Timestamp created_before = 7;
+}
+message ListOpportunitiesResponse {
+  repeated Opportunity opportunities = 1;
+  string               next_cursor   = 2;
+}
+
+message ListStagesRequest {}
+message ListStagesResponse { repeated OpportunityStage stages = 1; }

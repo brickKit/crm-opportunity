@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "crm-opportunity 事件清单",
+  "note": "Schema 演进铁律：只增不删不改（决策 19）。消费者宽容反序列化。",
+  "envelope": {
+    "description": "所有事件共用的信封。三个 Header 字段由 be-sdk 自动填/校验（§3.10）",
+    "required": ["subject", "aggregate_id", "version", "trace_id", "causation_id", "hop_count", "occurred_at"],
+    "properties": {
+      "subject":      { "type": "string", "pattern": "^[a-z]+\\.[a-z-]+\\.[a-z-]+\\.v[0-9]+$" },
+      "aggregate_id": { "type": "string" },
+      "version":      { "type": "integer", "description": "消费者只在严格大于本地当前值时更新（决策 43）" },
+      "trace_id":     { "type": "string" },
+      "causation_id": { "type": "string" },
+      "hop_count":    { "type": "integer", "maximum": 5, "description": "> 5 直接丢弃进 DLQ（决策 42）" },
+      "occurred_at":  { "type": "string", "format": "date-time" }
+    }
+  },
+  "events": [
+    {
+      "subject": "crm.opportunity.won.v1",
+      "grade": "core",
+      "note": "⭐ 链路的扳机（设计计划 §4.1）：MarkWon 成功提交后经 Outbox 发出。⚠️ subject 是三段式 crm.opportunity.won.v1，不是两段式 opportunity.won.v1（设计书 §3.7 命名法 {domain}.{aggregate}.{action}）——这是唯一还能改的窗口，erp-sales 的 handler 一旦开始消费就不能再改名（决策 19）。owner_id/dept_path 两个字段⭐最容易漏：erp-sales 的 handler 跑在事件消费路径（SystemClient/无 JWT 上下文），漏了这两个字段订单会建出来但没有归属，'我的订单'/组织树前缀匹配都查不到它，且不报任何错（设计计划 §4.1）。items[].quoted_unit_price 是报价快照仅供参考，不是权威价目——erp-sales 会用自己的定价引擎重算（设计计划 §2.1）。",
+      "payload": {
+        "type": "object",
+        "required": ["opportunity_id", "customer_id", "items", "owner_id", "dept_path", "currency", "revision"],
+        "properties": {
+          "opportunity_id": { "type": "string", "description": "幂等来源：四元组是 (crm-opportunity, opportunity, opportunity_id, revision)" },
+          "customer_id":    { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["product_id", "quantity", "quoted_unit_price"],
+              "properties": {
+                "product_id":        { "type": "string" },
+                "quantity":          { "type": "string", "description": "decimal-as-string" },
+                "quoted_unit_price": { "type": "string", "description": "⚠️ 报价快照供参考，不是权威价目——erp-sales 会用自己的定价引擎重算" }
+              }
+            }
+          },
+          "owner_id":            { "type": "string", "description": "⭐ 最容易漏：erp-sales handler 无 JWT 上下文，归属必须靠事件带" },
+          "dept_path":           { "type": "string", "description": "⭐ 最容易漏：同 owner_id，缺了 org 维前缀匹配匹配不上" },
+          "currency":            { "type": "string" },
+          "expected_close_date": { "type": "string", "format": "date-time" },
+          "revision":            { "type": "integer", "description": "乱序保护，与信封 version 同值" }
+        }
+      }
+    },
+    {
+      "subject": "crm.opportunity.lost.v1",
+      "grade": "peripheral",
+      "note": "供未来的 BI 分析用（设计计划 §4）。",
+      "payload": {
+        "type": "object",
+        "required": ["opportunity_id", "reason", "amount"],
+        "properties": {
+          "opportunity_id": { "type": "string" },
+          "reason":         { "type": "string" },
+          "amount":         { "type": "string", "description": "decimal-as-string" }
+        }
+      }
+    },
+    {
+      "subject": "crm.opportunity.stage_changed.v1",
+      "grade": "peripheral",
+      "note": "供漏斗转化率分析用（设计计划 §4）。",
+      "payload": {
+        "type": "object",
+        "required": ["opportunity_id", "from_stage", "to_stage"],
+        "properties": {
+          "opportunity_id": { "type": "string" },
+          "from_stage":     { "type": "string" },
+          "to_stage":       { "type": "string" }
+        }
+      }
+    }
+  ]
+}
