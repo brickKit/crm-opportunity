@@ -4,7 +4,12 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.2                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.3                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.3：补 ListOpportunities 的真实数据权限边界测试
+    # （TestListOpportunities_org维前缀过滤/_owner维过滤）——此前 repo
+    # 包只有 TestInScope 一个纯函数单元测试，验证的是判定谓词本身，
+    # ListOpportunities 真实的 SQL 过滤路径完全没有真实数据覆盖过。
+    # 纯补测试，无行为/契约变更。
     # v1.0.2：弱依赖版本号同步跟进 mdm/customer@1.0.4、mdm/product@1.0.4
     # （新增 make seed/seed-clean，无破坏性变更）。
     # v1.0.1：补数据权限边界测试（TestGetOpportunity_范围外ErrForbidden/
@@ -62,7 +67,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.2
+  image: brickenterprise/crm-opportunity:1.0.3
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
