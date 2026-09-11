@@ -4,7 +4,16 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.4                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.5                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.5：新增 scripts/seed.sh + make seed/seed-clean——种子商机归
+    # 本组件自己持有（总纲 SOP-W-7），Makefile 链式调用强依赖
+    # mdm-customer/mdm-product 与身份类例外 infra-iam-casdoor/
+    # infra-authz 各自的 seed，单独 make -C components/crm/opportunity
+    # seed 就能拿到完整数据。真机验证过标准配合"给库存的编排层顺序"
+    # 才能让 WON 商机自动转的订单真正 CONFIRMED（单独跑本组件的 seed，
+    # 没有编排层给库存的话，会走 erp-sales 真实的 TCC 补偿建异常待办，
+    # 这是设计上正确的行为，不是 bug）。纯本地开发工具，无行为/契约
+    # 变更。
     # v1.0.4：docs/手册.md 的 TEST_PG_DSN 示例改指向 brickkit_test_db，
     # 纯文档，无行为/契约变更。
     # v1.0.3：补 ListOpportunities 的真实数据权限边界测试
@@ -69,7 +78,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.4
+  image: brickenterprise/crm-opportunity:1.0.5
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
