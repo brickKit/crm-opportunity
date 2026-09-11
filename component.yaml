@@ -4,7 +4,9 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.3                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.4                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.4：docs/手册.md 的 TEST_PG_DSN 示例改指向 brickkit_test_db，
+    # 纯文档，无行为/契约变更。
     # v1.0.3：补 ListOpportunities 的真实数据权限边界测试
     # （TestListOpportunities_org维前缀过滤/_owner维过滤）——此前 repo
     # 包只有 TestInScope 一个纯函数单元测试，验证的是判定谓词本身，
@@ -67,7 +69,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.3
+  image: brickenterprise/crm-opportunity:1.0.4
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
