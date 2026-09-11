@@ -4,7 +4,11 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.0                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.1                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.1：补数据权限边界测试（TestGetOpportunity_范围外ErrForbidden/
+    # _owner精确命中即使部门不同）——be-acceptance@v0.3.5 新增
+    # data-scope-test-scan 门禁发现本组件此前零覆盖（总纲 SOP-W-8）。
+    # 纯补测试，无行为/契约变更。
   description: 商机全生命周期、漏斗与赢单预测原始数据、赢单事件——阶段三第一个业务组件，CRM 与 ERP 零同步边仅事件握手
   license: Apache-2.0
   vendor: brickKit
@@ -56,7 +60,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.0
+  image: brickenterprise/crm-opportunity:1.0.1
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）

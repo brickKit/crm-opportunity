@@ -11,6 +11,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -142,6 +143,65 @@ func TestCreateOpportunity_真实校验客户与产品并取展示快照(t *test
 	// dept_id/dept_path/owner_id 从 e2eTestCtx 注入的 Claims 派生。
 	if opp.DeptPath != "/1/12/" || opp.DeptID != "12" || opp.OwnerID != "u_e2e_test_owner" {
 		t.Fatalf("创建时快照的归属字段不对：%+v", opp)
+	}
+}
+
+// createOpportunityWithScope 直接走 repo 层建一条指定归属的商机，不走
+// svc.CreateOpportunity（那条链需要真实 mdm-customer/mdm-product，跟本
+// 测试要验证的"范围过滤对不对"无关）。
+func createOpportunityWithScope(t *testing.T, ctx context.Context, r *repo.Repo, deptID, deptPath, ownerID string) *repo.Opportunity {
+	t.Helper()
+	opp, err := r.CreateOpportunity(ctx, repo.CreateOpportunityInput{
+		IdempotencyKey: uniqueSuffix("test-scope-opp"), Name: "范围测试商机", CustomerID: uniqueSuffix("C"),
+		CustomerName: "范围测试客户", ExpectedAmount: "1000.00",
+		Items: []repo.CreateOpportunityItemInput{
+			{ProductID: uniqueSuffix("P"), ProductSKU: "SKU-X", ProductName: "范围测试产品", UOMID: "EA", Qty: "1", QuotedUnitPrice: "1000.00"},
+		},
+		DeptID: deptID, DeptPath: deptPath, OwnerID: ownerID,
+	})
+	if err != nil {
+		t.Fatalf("建测试商机失败: %v", err)
+	}
+	return opp
+}
+
+// TestGetOpportunity_范围外ErrForbidden 是数据权限边界测试（总纲 SOP-W-8
+// "权限/数据权限边界测试"）：`e2eTestCtx()` 的 Claims 是
+// Sub=u_e2e_test_owner、DeptPath=/1/12/，建一条部门(/9/99/)和 owner
+// (u_someone_else) 都不命中的商机——org 前缀不匹配、owner 也不匹配，
+// InScope 两个条件都落空，必须拿到 repo.ErrForbidden，不能"多返回了
+// 几行不该看到的数据"（导读第 21 条同一类风险的读接口版本）。
+func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
+	db := testDB(t)
+	ctx := e2eTestCtx()
+	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	svc := New(r, slog.Default())
+
+	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_someone_else")
+
+	_, err := svc.GetOpportunity(ctx, opp.ID)
+	if !errors.Is(err, repo.ErrForbidden) {
+		t.Fatalf("部门与 owner 都不在范围内，期望 repo.ErrForbidden，实际 %v", err)
+	}
+}
+
+// TestGetOpportunity_owner精确命中即使部门不同 验证 InScope 的 OR 语义
+// （repo.go 注释明写：org 与 owner 任一命中就算在范围内，不是 AND）——
+// 部门完全不搭边，但商机的 owner_id 精确等于调用者的 sub，应该照样能看到。
+func TestGetOpportunity_owner精确命中即使部门不同(t *testing.T) {
+	db := testDB(t)
+	ctx := e2eTestCtx()
+	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	svc := New(r, slog.Default())
+
+	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_e2e_test_owner")
+
+	got, err := svc.GetOpportunity(ctx, opp.ID)
+	if err != nil {
+		t.Fatalf("owner 精确命中不该被拒绝: %v", err)
+	}
+	if got.ID != opp.ID {
+		t.Fatalf("拿到的商机不对：期望 %s，实际 %s", opp.ID, got.ID)
 	}
 }
 
