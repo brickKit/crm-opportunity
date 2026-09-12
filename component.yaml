@@ -4,7 +4,9 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.6                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.7                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.7：依赖版本号同步跟进 mdm/product@1.0.6（补 README 的"怎么
+    # 起来"/"怎么用"/"配置项"三节，纯文档修复），无破坏性变更。
     # v1.0.6：make seed 加量到 11 条商机——1-5 号原样保留（dev.superuser，
     # 只增不改），新增 6-10 号改用 dev.sales.east（华东分部）的真实 JWT
     # 建，同样覆盖 OPEN 三阶段/WON/LOST，外加时间跨度回填（最近 2-25 天
@@ -72,7 +74,7 @@ artifacts:
 dependencies:
   components:
     - mdm/customer@1.0.5
-    - mdm/product@1.0.5
+    - mdm/product@1.0.6
   resources:
     # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
     #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
@@ -95,7 +97,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.6
+  image: brickenterprise/crm-opportunity:1.0.7
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
