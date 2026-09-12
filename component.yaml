@@ -4,7 +4,24 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.5                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.6                     # 精确版本，不接受 ^ / ~ / latest
+    # v1.0.6：make seed 加量到 11 条商机——1-5 号原样保留（dev.superuser，
+    # 只增不改），新增 6-10 号改用 dev.sales.east（华东分部）的真实 JWT
+    # 建，同样覆盖 OPEN 三阶段/WON/LOST，外加时间跨度回填（最近 2-25 天
+    # 逐步推进）；新增 11 号是刻意信用超限的 WON 商机（低信用客户+足够
+    # 大的 qty），赢单后 erp-sales 真实拒绝确认，真实建一条
+    # infra-workflow 异常待办——用真实业务失败路径给 infra-workflow 造
+    # 真实数据，不用直接 grpcurl 伪造 CreateTask（那会绕开该组件明确的
+    # 设计安全边界，见该组件 proto 注释）。真机验证：dev.sales.east 的
+    # token 查列表只看到 6-11 号，org 维数据权限第一次有真实商机样本能
+    # 登录体验；两个成功的 WON 商机（4/9 号）都拿到干净 CONFIRMED 订单，
+    # 归属分别正确带着"无部门"/"华东"；11 号的订单真实卡在 DRAFT，
+    # infra-workflow 真实多一条归属正确（华东）的异常待办。把
+    # infra/seed-data/clean.sh 里"清理 erp-sales 联带订单"那段逻辑挪进
+    # 本组件自己的 scripts/seed-clean.sh（反查真实订单 id 精确删除，
+    # 比原来按客户 id 模糊扫更精确）——这是删掉 infra/seed-data/ 的
+    # 前提条件，已满足。依赖版本号同步跟进 mdm/customer@1.0.5、
+    # mdm/product@1.0.5（种子数据丰富度批量整改）。无破坏性变更。
     # v1.0.5：新增 scripts/seed.sh + make seed/seed-clean——种子商机归
     # 本组件自己持有（总纲 SOP-W-7），Makefile 链式调用强依赖
     # mdm-customer/mdm-product 与身份类例外 infra-iam-casdoor/
@@ -54,8 +71,8 @@ artifacts:
 # 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
 dependencies:
   components:
-    - mdm/customer@1.0.4
-    - mdm/product@1.0.4
+    - mdm/customer@1.0.5
+    - mdm/product@1.0.5
   resources:
     # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
     #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
@@ -78,7 +95,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.5
+  image: brickenterprise/crm-opportunity:1.0.6
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
