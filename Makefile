@@ -49,20 +49,25 @@ dag-check:  ## 强依赖图无环（§4.2）。两条强依赖边硬校验，明
 	   echo "✗ CRM 与 ERP 零同步边——不许对 erp-*/infra-workflow 建依赖边（§1.4 铁律、设计计划 §5）"; exit 1; fi
 	@echo "✓ 两条强依赖边齐全、无自环、无违规 ERP 同步边（跨组件整图成环检测由 brickkit up --dry-run 负责，§4.2）"
 
-contract-check:  ## 禁破坏性变更（§8.5、决策 33）。只对本组件自己的契约较真，不含 contracts/vendor 只读镜像
+contract-check:  ## 禁破坏性变更（§8.5、决策 33）
 	buf lint
 	buf breaking --against '.git#branch=main'
 
 import-scan:  ## 铁律六：不许 import 任何其他组件仓库（§13.3）
-	@# ⚠️ contracts/vendor/ 的只读镜像 buf generate 到 gen/ 时物理落在
-	@# github.com/brickKit/crm-opportunity/gen/... 下（本组件自己的模块
-	@# 路径，沿用 erp-sales 立的 vendored-contract 判据）——天然匹配下面
-	@# 的白名单前缀，不需要特殊排除。
+	@# ⚠️ 第二类白名单：github.com/brickKit/<repo>/gen/... 是任意组件自己
+	@# 发布的生成物契约包（纯 protoc-gen-go/-grpc 产出，无业务逻辑）——
+	@# 阶段四发现同一个 Go 测试二进制里编译进多个外壳的真实模块时，逐字
+	@# 复制一份别的组件生成代码（vendored-contract）会在 protobuf 全局
+	@# 注册表里撞车，只能改成直接 import 真身（设计书 §13.3 铁律六新增
+	@# 说明、阶段四调研记录 04 §13）。本组件已经从 vendor 自己的镜像改成
+	@# 直接 import mdm-customer/mdm-product 各自的 gen/ 包，
+	@# contracts/vendor/ 目录已经清空删除。
 	@bad="$$(go list -deps ./... 2>/dev/null | grep -E '^github.com/brickKit/' \
-	         | grep -vE '^github.com/brickKit/(crm-opportunity|be-sdk-go)(/|$$)' || true)"; \
+	         | grep -vE '^github.com/brickKit/(crm-opportunity|be-sdk-go)(/|$$)' \
+	         | grep -vE '^github.com/brickKit/[^/]+/gen/' || true)"; \
 	 if [ -n "$$bad" ]; then \
 	   echo "✗ 铁律六违规，import 了其他组件仓库："; echo "$$bad"; exit 1; fi; \
-	 echo "✓ 无组件间 import（含两份 vendor 镜像生成的 stub 在内）"
+	 echo "✓ 无组件间 import（含直接 import 的两个真身 gen/ 契约包在内）"
 
 module-check:  ## 铁律七：模块能被合进外壳（§12.5、§13.3 铁律七）
 	@# 同 erp-sales/erp-finance 既有判据：只扫 backend/module 与

@@ -18,8 +18,8 @@ import (
 	"github.com/brickKit/crm-opportunity/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/backend/internal/repo"
 
-	customerv1 "github.com/brickKit/crm-opportunity/gen/mdm/customer/v1"
-	productv1 "github.com/brickKit/crm-opportunity/gen/mdm/product/v1"
+	customerv1 "github.com/brickKit/mdm-customer/gen/mdm/customer/v1"
+	productv1 "github.com/brickKit/mdm-product/gen/mdm/product/v1"
 )
 
 var ErrInvalidArgument = errors.New("参数不合法")

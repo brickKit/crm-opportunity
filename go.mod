@@ -4,6 +4,8 @@ go 1.25.0
 
 require (
 	github.com/brickKit/be-sdk-go v0.2.4
+	github.com/brickKit/mdm-customer/gen/mdm/customer v1.0.6
+	github.com/brickKit/mdm-product/gen/mdm/product v1.0.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.10.0
@@ -11,6 +13,20 @@ require (
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
+
+// mdm-customer/gen/mdm/customer、mdm-product/gen/mdm/product 是各自组件
+// 真身发布的生成物契约包（铁律六第二类白名单，设计书 §13.3），本组件
+// 直接 import——不再逐字复制一份放进自己仓库的 contracts/vendor/（那个
+// 目录已经清空删除）。
+//
+// 原因：本组件与 mdm-customer/mdm-product 虽然被分进了不同外壳
+// （go-backoffice vs go-core，生产环境不会真的同进程），但 shells/go 的
+// 测试文件把多个外壳的真实模块测试放进同一个 Go 测试二进制，编译阶段
+// 依然会把两份内容相同的生成代码一起链进去，在 protobuf 全局注册表里
+// 重复注册同一个文件/类型全名而 panic——Go 的 module system 无法把两个
+// 不同 import path 的包合并成一份编译实例，replace 也解决不了（阶段四
+// 调研记录 04 §13 有完整推演，含最小复现；erp-sales 已经据此完成同样的
+// 改动）。
 
 require (
 	github.com/MicahParks/jwkset v0.11.3 // indirect
