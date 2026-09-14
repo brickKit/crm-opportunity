@@ -4,7 +4,8 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.10                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.11                     # 精确版本，不接受 ^ / ~ / latest
+                                      # v1.0.11：同 mdm/customer 这次改动，删掉 deployment.labels 的 prometheus.io/port，理由同上。无业务行为/契约变更。
                                      # v1.0.10：依赖版本号同步跟进 mdm/customer@1.0.7、mdm/product@1.0.8，无破坏性变更。
                                      # v1.0.9：不再 vendor mdm-customer/mdm-product 两份契约镜像，改直接 import 真身 gen/ 包（铁律六新增第二类白名单，与 be-sdk-* 同类，设计书§13.3）。原因：shells/go 的测试文件把多个外壳的真实模块测试放进同一个 Go 测试二进制，本组件跟 mdm-customer/mdm-product 虽然分在不同外壳（生产环境不会真的同进程），但测试编译阶段依然会把两份内容相同的生成代码一起链进去，在 protobuf 全局注册表里重复注册同一个文件/类型全名而 panic ——Go 的 module system 无法把两个不同 import path 的包合并成一份编译实例，replace 也解决不了（阶段四调研记录 04 §13 有完整推演+最小复现； erp-sales 已经先行完成同样的改动）。contracts/vendor/ 整个目录清空删除，import-scan 门禁新增放行 github.com/brickKit/<repo>/gen/... 这个形状。gRPC 调用行为、契约面、业务逻辑均无变化，import-scan/单测/ contract-check 全绿。
                                      # v1.0.8：依赖版本号同步跟进 mdm/customer@1.0.6、mdm/product@1.0.7，无破坏性变更。
@@ -76,8 +77,8 @@ artifacts:
 # 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
 dependencies:
   components:
-    - mdm/customer@1.0.7
-    - mdm/product@1.0.8
+    - mdm/customer@1.0.8
+    - mdm/product@1.0.9
   resources:
     # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
     #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
@@ -100,13 +101,20 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.10
+  image: brickenterprise/crm-opportunity:1.0.11
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
   labels:                            # 平台只搬运，不解释键值。值必须是字符串
     prometheus.io/scrape: "true"
-    prometheus.io/port: "8102"
+    # prometheus.io/port 原来写在这里——阶段四附加 Task 0.1 真机验证
+    # servedBy 时发现这个标签会跟同外壳其它成员的 prometheus.io/port 撞车
+    # 报错（每个组件的值天然不同，servedBy 的 labels 合并规则没有像 env
+    # 变量合并那样排除这类"语义上必然因组件而异"的标签，已反馈给 brickKit，
+    # 见装配仓库 docs/dev/brickKit反馈-servedBy的labels合并漏了排除规则.md）。
+    # 在 brickKit 修复或给出结论之前，暂时从这里删掉，只在合并后的外壳
+    # 自己的条目上保留一份——跟"合并后指标只能走一个共享抓取端口"这个
+    # 事实本来就一致，不是单纯绕过。
     prometheus.io/path: "/metrics"
   resources:
     requests: { cpu: "100m", memory: "128Mi" }  # 无 TCC 编排、无补偿链，比 erp-sales 轻
