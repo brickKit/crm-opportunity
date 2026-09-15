@@ -4,7 +4,8 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.11                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.12                     # 精确版本，不接受 ^ / ~ / latest
+                                      # v1.0.12：同上，scripts/seed.sh 的 REST+JWT 换取部分改成工具箱容器 + ServiceName() 地址规则。真机在 servedBy 部署下跑通 make seed（① dev.superuser 5 条商机② dev.sales.east 5 条商机 + 1 条信用超限商机），完整验证了阶段四附录 E 业务链路（CRM 赢单→erp-sales 自动建单确认/信用超限拒绝→infra-workflow 异常待办）在这次 servedBy 迁移之后依然端到端成立，见 docs/plans/04b-验证记录.md Task 0.5。无业务行为/契约变更。
                                       # v1.0.11：同 mdm/customer 这次改动，删掉 deployment.labels 的 prometheus.io/port，理由同上。无业务行为/契约变更。
                                      # v1.0.10：依赖版本号同步跟进 mdm/customer@1.0.7、mdm/product@1.0.8，无破坏性变更。
                                      # v1.0.9：不再 vendor mdm-customer/mdm-product 两份契约镜像，改直接 import 真身 gen/ 包（铁律六新增第二类白名单，与 be-sdk-* 同类，设计书§13.3）。原因：shells/go 的测试文件把多个外壳的真实模块测试放进同一个 Go 测试二进制，本组件跟 mdm-customer/mdm-product 虽然分在不同外壳（生产环境不会真的同进程），但测试编译阶段依然会把两份内容相同的生成代码一起链进去，在 protobuf 全局注册表里重复注册同一个文件/类型全名而 panic ——Go 的 module system 无法把两个不同 import path 的包合并成一份编译实例，replace 也解决不了（阶段四调研记录 04 §13 有完整推演+最小复现； erp-sales 已经先行完成同样的改动）。contracts/vendor/ 整个目录清空删除，import-scan 门禁新增放行 github.com/brickKit/<repo>/gen/... 这个形状。gRPC 调用行为、契约面、业务逻辑均无变化，import-scan/单测/ contract-check 全绿。
@@ -77,8 +78,8 @@ artifacts:
 # 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
 dependencies:
   components:
-    - mdm/customer@1.0.8
-    - mdm/product@1.0.9
+    - mdm/customer@1.0.9
+    - mdm/product@1.0.10
   resources:
     # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
     #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
@@ -101,7 +102,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.11
+  image: brickenterprise/crm-opportunity:1.0.12
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
