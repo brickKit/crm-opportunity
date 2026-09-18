@@ -4,7 +4,8 @@ kind: Component
 metadata:
   id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
   name: 商机管理
-  version: 1.0.12                     # 精确版本，不接受 ^ / ~ / latest
+  version: 1.0.13                     # 精确版本，不接受 ^ / ~ / latest
+                                      # v1.0.13：同 erp/inventory 这次改动，scripts/seed.sh 改成 source infra/scripts/lib/seed-net.sh（含 with_toolbox/get_app_jwt 多身份换取、idfor 反查客户/产品 id），理由同上。真机跑通 make seed（11 条商机，覆盖 OPEN 三阶段/WON/LOST/信用超限赢单失败五种路径），无业务行为/契约变更。
                                       # v1.0.12：同上，scripts/seed.sh 的 REST+JWT 换取部分改成工具箱容器 + ServiceName() 地址规则。真机在 servedBy 部署下跑通 make seed（① dev.superuser 5 条商机② dev.sales.east 5 条商机 + 1 条信用超限商机），完整验证了阶段四附录 E 业务链路（CRM 赢单→erp-sales 自动建单确认/信用超限拒绝→infra-workflow 异常待办）在这次 servedBy 迁移之后依然端到端成立，见 docs/plans/04b-验证记录.md Task 0.5。无业务行为/契约变更。
                                       # v1.0.11：同 mdm/customer 这次改动，删掉 deployment.labels 的 prometheus.io/port，理由同上。无业务行为/契约变更。
                                      # v1.0.10：依赖版本号同步跟进 mdm/customer@1.0.7、mdm/product@1.0.8，无破坏性变更。
@@ -78,8 +79,8 @@ artifacts:
 # 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
 dependencies:
   components:
-    - mdm/customer@1.0.9
-    - mdm/product@1.0.10
+    - mdm/customer@1.0.10
+    - mdm/product@1.0.11
   resources:
     # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
     #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
@@ -102,7 +103,7 @@ configSchema:
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.12
+  image: brickenterprise/crm-opportunity:1.0.13
   port: 8102                         # 端口册 registry/ports.tsv
   extraPorts:
     - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
