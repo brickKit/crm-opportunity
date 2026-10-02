@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -130,12 +131,14 @@ func (r *Repo) GetOpportunity(ctx context.Context, id string) (*Opportunity, err
 	return o, nil
 }
 
-// BatchGetOpportunities 是防 N+1 的唯一合法调用方式（§3.8）。只返回找到的。
+// BatchGetOpportunities 只返回找到的，缺失的 id 列进 missing：调用方拿一批
+// id 来解析展示，其中一条不存在不能让整批失败。
 func (r *Repo) BatchGetOpportunities(ctx context.Context, ids []string) (found []*Opportunity, missing []string, err error) {
 	for _, id := range ids {
 		o, err := r.GetOpportunity(ctx, id)
 		if err != nil {
-			if err == ErrNotFound {
+			// GetOpportunity 返回的是包了 id 的 ErrNotFound，必须用 errors.Is。
+			if errors.Is(err, ErrNotFound) {
 				missing = append(missing, id)
 				continue
 			}
