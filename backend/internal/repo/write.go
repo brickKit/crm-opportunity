@@ -153,6 +153,17 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 	if len(in.Items) == 0 {
 		return nil, fmt.Errorf("%w: items 不能为空", ErrInvalidArgument)
 	}
+	if err := ValidateAmount("expected_amount", in.ExpectedAmount); err != nil {
+		return nil, err
+	}
+	if err := ValidateProbability("probability", in.ProbabilityOverride); err != nil {
+		return nil, err
+	}
+	for _, it := range in.Items {
+		if err := ValidateItem(it.Qty, it.QuotedUnitPrice); err != nil {
+			return nil, err
+		}
+	}
 
 	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.create", func(tx *sql.Tx) (*Opportunity, error) {
 		stage, err := firstStageTx(ctx, tx)
@@ -221,6 +232,9 @@ func (r *Repo) UpdateOpportunity(ctx context.Context, in UpdateOpportunityInput)
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidateAmount("expected_amount", in.ExpectedAmount); err != nil {
+		return nil, err
+	}
 
 	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.update", func(tx *sql.Tx) (*Opportunity, error) {
 		locked, err := lockOpenTx(ctx, tx, oppID, in.ID)
@@ -266,6 +280,9 @@ func (r *Repo) ChangeStage(ctx context.Context, in ChangeStageInput) (*Opportuni
 	}
 	toStageID, err := parseID("to_stage_id", in.ToStageID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ValidateProbability("probability_override", in.ProbabilityOverride); err != nil {
 		return nil, err
 	}
 

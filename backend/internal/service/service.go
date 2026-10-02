@@ -168,6 +168,16 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		if it.ProductID == "" || it.Qty == "" || it.QuotedUnitPrice == "" {
 			return nil, fmt.Errorf("%w: product_id/qty/quoted_unit_price 不能为空", ErrInvalidArgument)
 		}
+		if err := repo.ValidateItem(it.Qty, it.QuotedUnitPrice); err != nil {
+			return nil, err
+		}
+	}
+	// 数字类入参在调 mdm-customer / mdm-product 之前就校验：参数错了不该先花两次网络调用。
+	if err := repo.ValidateAmount("expected_amount", in.ExpectedAmount); err != nil {
+		return nil, err
+	}
+	if err := repo.ValidateProbability("probability", in.ProbabilityOverride); err != nil {
+		return nil, err
 	}
 
 	customer, err := s.fetchActiveCustomer(ctx, in.CustomerID)
