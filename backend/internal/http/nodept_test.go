@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -26,5 +27,27 @@ func TestNoDept_REST列表为空且别人的商机答404(t *testing.T) {
 	}
 	if code, body := do(t, eng, http.MethodGet, "/crm/opportunity/opportunities/"+mine.ID, ""); code != http.StatusOK {
 		t.Fatalf("自己负责的商机：期望 200，实际 %d：%v", code, body)
+	}
+}
+
+// 没有部门的人建的商机 dept_path 为空，只有负责人看得到。照契约 PATCH 只带要改的
+// 字段（不带 owner_id）之后，负责人不能被清空：否则这条商机从此谁都看不到。
+func TestNoDept_REST改商机不带owner_id时负责人不变且仍看得到(t *testing.T) {
+	r := testRepo(t)
+	me := "u_" + uniqueSuffix("rest-nodept-patch")
+	mine := createOpp(t, r, "", me, "100.00")
+	eng := engineAs(testService(r), besdk.Claims{Sub: me, DeptPath: ""})
+
+	body := fmt.Sprintf(`{"idempotency_key":%q,"version":%d,"name":"改了名","expected_amount":"200.00"}`,
+		uniqueSuffix("nodept-patch"), mine.Version)
+	code, out := do(t, eng, http.MethodPatch, "/crm/opportunity/opportunities/"+mine.ID, body)
+	if code != http.StatusOK {
+		t.Fatalf("PATCH：期望 200，实际 %d：%v", code, out)
+	}
+	if out["owner_id"] != me {
+		t.Fatalf("没带 owner_id 不该清空负责人：期望 %q，实际 %v", me, out["owner_id"])
+	}
+	if code, out := do(t, eng, http.MethodGet, "/crm/opportunity/opportunities/"+mine.ID, ""); code != http.StatusOK {
+		t.Fatalf("改完之后负责人自己再读：期望 200，实际 %d：%v", code, out)
 	}
 }

@@ -41,7 +41,7 @@ gRPC `crm.opportunity.v1.OpportunityService`, for other components:
 | rpc | Kind | Notes |
 |---|---|---|
 | `CreateOpportunity` | write | idempotent; validates customer and products against master data; starts at the stage with the smallest `sort_order`; probability from the stage unless given (`optional`, so 0 is a valid override) |
-| `UpdateOpportunity` | write | idempotent; full replacement of name, amount, close date and owner, not a partial patch; stale `version` → `ABORTED` |
+| `UpdateOpportunity` | write | idempotent; `name` and `expected_amount` are required (empty → `INVALID_ARGUMENT`); an omitted `owner_id` or `expected_close_date` keeps its current value; stale `version` → `ABORTED`. The two optional fields keep rather than clear because a caller that sends only what it changes, as the contract allows, must not wipe the owner: without an owner the opportunity drops out of `view=mine`, a later win publishes `owner_id: ""`, and a row created by someone with no department (`dept_path` empty) becomes visible to nobody. The cost is that a close date, once set, cannot be cleared through this call |
 | `ChangeStage` | write | idempotent; any stage to any stage, history row written |
 | `MarkWon` | write | idempotent; sets `WON`, probability 100, `won_at`, and writes `crm.opportunity.won.v1` in the same transaction |
 | `MarkLost` | write | idempotent; reason required |

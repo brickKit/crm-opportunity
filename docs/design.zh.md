@@ -41,7 +41,7 @@ gRPC `crm.opportunity.v1.OpportunityService`，给别的组件用：
 | rpc | 类型 | 说明 |
 |---|---|---|
 | `CreateOpportunity` | 写 | 幂等；对照主数据校验客户与产品；从 `sort_order` 最小的阶段开始；概率取阶段默认值，除非调用方给了（`optional`，所以 0 是合法的覆盖值） |
-| `UpdateOpportunity` | 写 | 幂等；名称、金额、预计成交日、负责人整体替换，不是部分更新；`version` 过期 → `ABORTED` |
+| `UpdateOpportunity` | 写 | 幂等；`name` 与 `expected_amount` 必带（空的 → `INVALID_ARGUMENT`）；没带 `owner_id` 或 `expected_close_date` 就保留原值；`version` 过期 → `ABORTED`。这两个可选字段没带时保留而不是清空，是因为照契约只带改动字段的调用方不能把负责人抹掉：没有负责人，商机就从 `view=mine` 里消失，之后赢单事件带 `owner_id: ""`，没有部门的人建的商机（`dept_path` 为空）从此谁都看不到。代价是预计成交日一旦设了，就不能经这个调用清空 |
 | `ChangeStage` | 写 | 幂等；任意阶段之间都能跳，写一行历史 |
 | `MarkWon` | 写 | 幂等；置 `WON`、概率 100、`won_at`，并在同一个事务里写 `crm.opportunity.won.v1` |
 | `MarkLost` | 写 | 幂等；必须给原因 |

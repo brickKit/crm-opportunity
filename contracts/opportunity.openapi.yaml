@@ -344,10 +344,10 @@ components:
       properties:
         idempotency_key: { type: string }
         version: { type: integer, format: int64, description: 乐观锁：与库里不一致则拒绝 }
-        name: { type: string }
-        expected_amount: { type: string }
-        expected_close_date: { type: string, format: date-time }
-        owner_id: { type: string, description: 改负责人 }
+        name: { type: string, description: 每次都要带；空的答 400 }
+        expected_amount: { type: string, description: 每次都要带；十进制字符串，最多两位小数 }
+        expected_close_date: { type: string, format: date-time, description: 不带（或空串）则保留原值；设了之后只能改、不能清空 }
+        owner_id: { type: string, description: 改负责人；不带（或空串）则保留原值 }
 
     ChangeStageRequest:
       type: object

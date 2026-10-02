@@ -211,8 +211,12 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 	})
 }
 
-// ── UpdateOpportunity：改名 / 金额 / 预计成交日 / 负责人。全量替换语义，不是
-// 部分 PATCH：没变的字段由调用方原样带回。只有 OPEN 能改，version 是乐观锁 ──
+// ── UpdateOpportunity：改名 / 金额 / 预计成交日 / 负责人。只有 OPEN 能改，
+// version 是乐观锁。name 与 expected_amount 每次都要带（空的拒绝，不会被写成空）；
+// owner_id 与 expected_close_date 在契约里是可选的，没带（空串 / 零值）就保留原值：
+// 照契约只带要改的字段的调用方，不能因此清空负责人——负责人一空，view=mine 看不到、
+// 赢单事件带 owner_id ""，没有部门的人建的商机（dept_path 为空）从此谁都看不到。
+// 代价：预计成交日一旦设了，就不能经 Update 清空（只能改成别的日期）──
 
 type UpdateOpportunityInput struct {
 	IdempotencyKey    string
@@ -232,6 +236,9 @@ func (r *Repo) UpdateOpportunity(ctx context.Context, in UpdateOpportunityInput)
 	if err != nil {
 		return nil, err
 	}
+	if in.Name == "" {
+		return nil, fmt.Errorf("%w: name 不能为空", ErrInvalidArgument)
+	}
 	if err := ValidateAmount("expected_amount", in.ExpectedAmount); err != nil {
 		return nil, err
 	}
@@ -247,7 +254,9 @@ func (r *Repo) UpdateOpportunity(ctx context.Context, in UpdateOpportunityInput)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE opportunities
-			SET name = $1, expected_amount = $2, expected_close_date = $3, owner_id = $4,
+			SET name = $1, expected_amount = $2,
+				expected_close_date = COALESCE($3::date, expected_close_date),
+				owner_id = COALESCE(NULLIF($4::text, ''), owner_id),
 				version = version + 1, updated_at = now()
 			WHERE id = $5`,
 			in.Name, in.ExpectedAmount, nullableDate(in.ExpectedCloseDate), in.OwnerID, oppID,

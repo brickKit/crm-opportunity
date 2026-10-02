@@ -113,10 +113,10 @@ message UpdateOpportunityRequest {
   string idempotency_key = 1;
   string id              = 2;
   int64  version         = 3;   // 乐观锁：与库里不一致则拒绝
-  string name            = 4;
-  string expected_amount = 5;
-  google.protobuf.Timestamp expected_close_date = 6;
-  string owner_id        = 7;   // 改负责人
+  string name            = 4;   // 必带；空的拒绝（INVALID_ARGUMENT）
+  string expected_amount = 5;   // 必带
+  google.protobuf.Timestamp expected_close_date = 6;   // 不带则保留原值；设了之后只能改、不能清空
+  string owner_id        = 7;   // 改负责人；空串则保留原值
 }
 message UpdateOpportunityResponse { Opportunity opportunity = 1; }
 

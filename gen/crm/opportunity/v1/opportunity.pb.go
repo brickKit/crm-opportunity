@@ -683,11 +683,11 @@ type UpdateOpportunityRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	IdempotencyKey    string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	Id                string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	Version           int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"` // 乐观锁：与库里不一致则拒绝
-	Name              string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	ExpectedAmount    string                 `protobuf:"bytes,5,opt,name=expected_amount,json=expectedAmount,proto3" json:"expected_amount,omitempty"`
-	ExpectedCloseDate *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expected_close_date,json=expectedCloseDate,proto3" json:"expected_close_date,omitempty"`
-	OwnerId           string                 `protobuf:"bytes,7,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"` // 改负责人
+	Version           int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`                                               // 乐观锁：与库里不一致则拒绝
+	Name              string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`                                                      // 必带；空的拒绝（INVALID_ARGUMENT）
+	ExpectedAmount    string                 `protobuf:"bytes,5,opt,name=expected_amount,json=expectedAmount,proto3" json:"expected_amount,omitempty"`            // 必带
+	ExpectedCloseDate *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expected_close_date,json=expectedCloseDate,proto3" json:"expected_close_date,omitempty"` // 不带则保留原值；设了之后只能改、不能清空
+	OwnerId           string                 `protobuf:"bytes,7,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`                                 // 改负责人；空串则保留原值
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
