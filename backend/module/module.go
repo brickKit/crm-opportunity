@@ -6,6 +6,8 @@ package module
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 
 	besdk "github.com/brickKit/be-sdk-go"
 	opportunityv1 "github.com/brickKit/crm-opportunity/gen/crm/opportunity/v1"
@@ -24,8 +26,10 @@ import (
 func New(ctx context.Context, rt *besdk.Runtime) (*besdk.Module, error) {
 	// ⚠️ 配置只从 rt.Config 来，模块里零 os.Getenv：进了外壳，一个进程只有一份
 	// 环境变量，成员会互相读到对方的 PG_SCHEMA。
-	schema := rt.Config.StringOr("PG_SCHEMA", "crm_opportunity")
-	role := schema + "_rw"
+	role, schema, err := dbIdentity(rt.Config)
+	if err != nil {
+		return nil, err
+	}
 
 	r := repo.New(rt.DB, role, schema)
 	svc := service.New(r, client.New(rt.Config, client.DefaultTimeout), rt.Logger)
@@ -64,3 +68,29 @@ func New(ctx context.Context, rt *besdk.Runtime) (*besdk.Module, error) {
 		Stop: func(ctx context.Context) error { return nil }, // 后台循环靠 ctx 退出
 	}, nil
 }
+
+// dbIdentity 取本模块的数据库身份：每个事务 SET LOCAL ROLE 到 PG_USER，
+// search_path 指向 PG_SCHEMA。两个都只从配置来，代码里不写任何角色名、
+// schema 名，也不从一个推出另一个——部署者给什么名字就用什么名字。
+//
+// 单跑时 PG_USER 就是连接池登录的角色；进了外壳，连接池以外壳自己的角色登录，
+// 成员配置里的 PG_USER 是它每个事务切换到的角色（外壳的登录角色要是它的成员）。
+// 两个键都必须有值：PG_SCHEMA 的默认值由平台按 configSchema 注入，缺了说明
+// 配置没生成对，带着空名字跑起来只会在第一个请求时才报错。
+func dbIdentity(cfg besdk.Config) (role, schema string, err error) {
+	role, _ = cfg.String("PG_USER")
+	schema, _ = cfg.String("PG_SCHEMA")
+	if role == "" || schema == "" {
+		return "", "", fmt.Errorf("数据库身份不全：PG_USER=%q PG_SCHEMA=%q，两个都必须有值", role, schema)
+	}
+	// 两个名字都要原样拼进 SET LOCAL ROLE / search_path，besdk.WithTx 每个事务都按
+	// 同一条规则校验；这里在启动时先查一次，配错了起不来，而不是每个请求都 500。
+	for key, v := range map[string]string{"PG_USER": role, "PG_SCHEMA": schema} {
+		if !identRe.MatchString(v) {
+			return "", "", fmt.Errorf("%s=%q 不能用作数据库标识：只许小写字母开头、小写字母数字下划线", key, v)
+		}
+	}
+	return role, schema, nil
+}
+
+var identRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
