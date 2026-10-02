@@ -103,7 +103,7 @@ func createOpp(t *testing.T, r *repo.Repo, deptPath, ownerID, amount string) *re
 	opp, err := r.CreateOpportunity(context.Background(), repo.CreateOpportunityInput{
 		IdempotencyKey: uniqueSuffix("http-create"), Name: "REST 测试商机", CustomerID: uniqueSuffix("C"),
 		CustomerName: "REST 测试客户", ExpectedAmount: amount,
-		Items: []repo.CreateOpportunityItemInput{{ProductID: uniqueSuffix("P"), Qty: "1", QuotedUnitPrice: amount}},
+		Items:  []repo.CreateOpportunityItemInput{{ProductID: uniqueSuffix("P"), Qty: "1", QuotedUnitPrice: amount}},
 		DeptID: "1", DeptPath: deptPath, OwnerID: ownerID,
 	})
 	if err != nil {

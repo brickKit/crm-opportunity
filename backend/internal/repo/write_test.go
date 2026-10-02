@@ -400,4 +400,3 @@ func TestUpdateOpportunity_真实更新(t *testing.T) {
 		t.Fatalf("期望 version 递增，期望 %d 实际 %d", opp.Version+1, updated.Version)
 	}
 }
-
