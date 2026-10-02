@@ -82,6 +82,18 @@ func leafDeptID(deptPath string) string {
 	return segments[len(segments)-1]
 }
 
+// creatorSnapshot 给新商机取归属快照：dept_id / dept_path / owner_id 取自调用者
+// 的 token，之后负责人换部门，商机的归属不跟着变。没有部门的人（HasDept 为假）
+// 也能建商机，部门两列写空串：SDK 此时的 Prefix 是一个什么都不匹配的哨兵值，
+// 写进行里就成了一个假部门。dept_path 为空的行不在任何部门里，只有负责人看得到。
+func creatorSnapshot(ctx context.Context) (deptID, deptPath, ownerID string) {
+	scope := besdk.ScopeOf(ctx)
+	if !scope.HasDept {
+		return "", "", scope.Owner
+	}
+	return leafDeptID(scope.Prefix), scope.Prefix, scope.Owner
+}
+
 func uniqueStrings(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
@@ -203,14 +215,12 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		})
 	}
 
-	// dept_id/dept_path/owner_id 是创建时快照，从 besdk.ScopeOf(ctx) 取真实值；
-	// 之后负责人换部门，商机的归属不跟着变。
-	scope := besdk.ScopeOf(ctx)
+	deptID, deptPath, ownerID := creatorSnapshot(ctx)
 	opp, err := s.repo.CreateOpportunity(ctx, repo.CreateOpportunityInput{
 		IdempotencyKey: in.IdempotencyKey, Name: in.Name, CustomerID: in.CustomerID, CustomerName: customer.Name,
 		Items: items, ExpectedAmount: in.ExpectedAmount, ProbabilityOverride: in.ProbabilityOverride,
 		ExpectedCloseDate: in.ExpectedCloseDate, Currency: in.Currency,
-		DeptID: leafDeptID(scope.Prefix), DeptPath: scope.Prefix, OwnerID: scope.Owner,
+		DeptID: deptID, DeptPath: deptPath, OwnerID: ownerID,
 	})
 	if err != nil {
 		s.logFailure("建商机失败", err, "customer_id", in.CustomerID)

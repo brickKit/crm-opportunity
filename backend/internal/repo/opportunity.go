@@ -165,6 +165,7 @@ type ListInput struct {
 	// ── org/owner 两维数据范围，"我的商机"和"本部门及下级的商机"是
 	// 销售组织最基本的两个视图，与 erp/sales 的 ListInput 相同：由调用方
 	// （listOpportunitiesHandler 的 ?view= 参数）选择用哪一个，是切换不是 OR。
+	// dept 视角下 ScopePrefix 留空报 ErrInvalidArgument，不当成"不限"。
 	ViewMine    bool
 	ScopePrefix string
 	ScopeOwner  string
@@ -188,6 +189,10 @@ func (r *Repo) ListOpportunities(ctx context.Context, in ListInput) (*ListResult
 		ck = &decoded
 	}
 
+	if !in.ViewMine && in.ScopePrefix == "" {
+		return nil, errEmptyScopePrefix
+	}
+
 	var out ListResult
 	err := besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
 		query := `SELECT id FROM opportunities WHERE created_at >= $1 AND created_at <= $2`
@@ -196,8 +201,8 @@ func (r *Repo) ListOpportunities(ctx context.Context, in ListInput) (*ListResult
 			args = append(args, in.ScopeOwner)
 			query += fmt.Sprintf(" AND owner_id = $%d", len(args))
 		} else {
-			// ScopePrefix 为空（部门树根节点）时 `LIKE '' || '%'` 等价于
-			// `LIKE '%'`，匹配全部：部门路径为空的身份就是"全部"（besdk.ScopeOf 的 All）。
+			// ScopePrefix 不会是空串（上面已拦下）：没有部门的调用者拿到的是 SDK 的
+			// 哨兵值，什么都不匹配；根标记 "/" 匹配每一条有部门的商机。
 			args = append(args, in.ScopePrefix)
 			query += fmt.Sprintf(" AND dept_path LIKE $%d || '%%'", len(args))
 		}

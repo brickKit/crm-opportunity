@@ -21,7 +21,7 @@ type FunnelStage struct {
 
 // FunnelInput 的视角与 ListInput 相同：ViewMine 时只按 ScopeOwner，否则只按
 // ScopePrefix——是二选一的切换，不是 OR。两个值都由 service 层从调用者的
-// token 填，不接受调用方传入。
+// token 填，不接受调用方传入。dept 视角下 ScopePrefix 留空报 ErrInvalidArgument。
 type FunnelInput struct {
 	ViewMine    bool
 	ScopePrefix string
@@ -33,6 +33,9 @@ type FunnelInput struct {
 // round(numeric, 2) 与 Go 侧 formatCents 同为 .5 远离零。不加时间窗口：漏斗
 // 是"现在所有还开着的商机"，不论建了多久。
 func (r *Repo) Funnel(ctx context.Context, in FunnelInput) ([]FunnelStage, error) {
+	if !in.ViewMine && in.ScopePrefix == "" {
+		return nil, errEmptyScopePrefix
+	}
 	scopeCond, scopeArg := "o.dept_path LIKE $2 || '%'", in.ScopePrefix
 	if in.ViewMine {
 		scopeCond, scopeArg = "o.owner_id = $2", in.ScopeOwner

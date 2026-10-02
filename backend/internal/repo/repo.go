@@ -20,6 +20,11 @@ import (
 var ErrInvalidArgument = errors.New("参数不合法")
 var ErrNotFound = errors.New("not found")
 
+// errEmptyScopePrefix：dept 视角的列表 / 漏斗收到空的 ScopePrefix。只可能是调用方
+// 漏填了（SDK 保证调用者的前缀不是空串），当成"不限"，SQL 就成了 `dept_path LIKE '%'`，
+// 所有人看到所有商机——报错，不放行。
+var errEmptyScopePrefix = fmt.Errorf("%w: dept 视角缺少 ScopePrefix", ErrInvalidArgument)
+
 // ErrOpportunityTerminal：对一个已经是终态（WON/LOST/CANCELLED）的商机
 // 做本该只有 OPEN 才能做的操作（改阶段、赢单、输单）。
 var ErrOpportunityTerminal = errors.New("商机已经是终态，不能再流转")
@@ -34,8 +39,13 @@ var ErrForbidden = errors.New("无权访问该商机")
 // erp-sales Order.InScope 的既有判据（"本部门及下级"与"我的商机"是
 // 同一个人可能同时具备的两种"看得到"的理由，不是互斥的，用 OR 不是
 // AND）。
+//
+// scopePrefix 为空时 org 一侧不命中：SDK 保证调用者的前缀不是空串（没有部门时
+// 是哨兵值），空串只可能是调用方漏填，而 HasPrefix(x, "") 对任何 x 都为真——
+// OR 的一个操作数成了"全匹配"，整个条件就匹配一切。
 func (o *Opportunity) InScope(scopePrefix, scopeOwner string) bool {
-	return strings.HasPrefix(o.DeptPath, scopePrefix) || o.OwnerID == scopeOwner
+	inOrg := scopePrefix != "" && strings.HasPrefix(o.DeptPath, scopePrefix)
+	return inOrg || o.OwnerID == scopeOwner
 }
 
 type Repo struct {

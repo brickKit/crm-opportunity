@@ -3,7 +3,7 @@ module github.com/brickKit/crm-opportunity/v2
 go 1.25.11
 
 require (
-	github.com/brickKit/be-sdk-go v0.4.0
+	github.com/brickKit/be-sdk-go v0.5.0
 	github.com/brickKit/mdm-customer/gen/mdm/customer v1.0.6
 	github.com/brickKit/mdm-product/gen/mdm/product v1.0.7
 	github.com/gin-gonic/gin v1.12.0
