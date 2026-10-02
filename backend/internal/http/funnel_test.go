@@ -8,7 +8,7 @@ import (
 )
 
 // GET /opportunities/funnel：响应 {stages: [{stage_id, stage_name, count,
-// expected_amount, weighted_amount}]}，每个阶段一行；?view=mine 只数本人负责的，
+// expected_amount, weighted_amount}]}，每个阶段占一行；?view=mine 只数本人负责的，
 // 省略或 dept 数本部门及下级——与列表同一个切换。金额是十进制字符串。
 func TestFunnel_REST形状与view切换(t *testing.T) {
 	r := testRepo(t)

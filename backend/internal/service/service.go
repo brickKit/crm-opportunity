@@ -2,7 +2,7 @@
 // 校验（mdm-customer/mdm-product 的 BatchGet）+ 给 http/grpc 一个不依赖
 // repo 内部细节的稳定入口（同 erp-sales/erp-inventory/erp-finance 的
 // 判据）。⚠️ 本组件没有 TCC 包——两条强依赖都是只读 BatchGet，没有
-// 需要补偿的远程写操作，校验逻辑直接放在这一层（设计计划 §5）。
+// 需要补偿的远程写操作，校验逻辑直接放在这一层。
 package service
 
 import (
@@ -203,8 +203,8 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		})
 	}
 
-	// dept_id/dept_path/owner_id 是创建时快照（设计计划 §1），从
-	// besdk.ScopeOf(ctx) 取真实值。
+	// dept_id/dept_path/owner_id 是创建时快照，从 besdk.ScopeOf(ctx) 取真实值；
+	// 之后负责人换部门，商机的归属不跟着变。
 	scope := besdk.ScopeOf(ctx)
 	opp, err := s.repo.CreateOpportunity(ctx, repo.CreateOpportunityInput{
 		IdempotencyKey: in.IdempotencyKey, Name: in.Name, CustomerID: in.CustomerID, CustomerName: customer.Name,

@@ -1,11 +1,12 @@
-// 真故障注入测试（同 erp-sales confirm_test.go 的既有判据）：让
-// mdm-customer/mdm-product 真的跑起来，真的校验客户/产品存在与状态、
-// 真的取展示快照——用 mock 测这条链等于没测，要验的正是跨进程的部分。
+// 跨组件测试：让 mdm/customer、mdm/product 真的跑起来，真的校验客户/产品
+// 存在与状态、真的取展示快照——用 mock 测这条链等于没测，要验的正是跨进程
+// 的部分。
 //
 // ⚠️ 这些测试需要两个真实依赖组件真的在跑，跟 TEST_PG_DSN 一样用环境
 // 变量判断要不要跳过：MDM_CUSTOMER_GRPC_ENDPOINT / MDM_PRODUCT_GRPC_ENDPOINT
-// （同 besdk.Endpoint() 认的格式，http://host:port）没有全部设置就跳过，
-// 不伪造数据也不用内存里的假实现代替。
+// （项目根 make test-cross 注入，格式与平台注入的地址相同：http://host:port，
+// 由 rt.Config.Endpoint 剥掉 scheme）没有全部设置就跳过，不伪造数据也不用
+// 内存里的假实现代替。
 package service
 
 import (
@@ -174,12 +175,11 @@ func createOpportunityWithScope(t *testing.T, ctx context.Context, r *repo.Repo,
 	return opp
 }
 
-// TestGetOpportunity_范围外ErrForbidden 是数据权限边界测试（总纲 SOP-W-8
-// "权限/数据权限边界测试"）：`e2eTestCtx()` 的 Claims 是
+// TestGetOpportunity_范围外ErrForbidden 是数据权限边界测试：`e2eTestCtx()` 的 Claims 是
 // Sub=u_e2e_test_owner、DeptPath=/1/12/，建一条部门(/9/99/)和 owner
 // (u_someone_else) 都不命中的商机——org 前缀不匹配、owner 也不匹配，
 // InScope 两个条件都落空，必须拿到 repo.ErrForbidden，不能"多返回了
-// 几行不该看到的数据"（导读第 21 条同一类风险的读接口版本）。
+// 几行不该看到的数据"。
 func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
@@ -214,8 +214,8 @@ func TestGetOpportunity_owner精确命中即使部门不同(t *testing.T) {
 	}
 }
 
-// TestCreateOpportunity_真实客户不存在时拒绝 是 §3 契约要求的直接测试：
-// "建档那一刻就要挡住脏数据"——真的问 mdm-customer，不是本地判断。
+// TestCreateOpportunity_真实客户不存在时拒绝：建档那一刻就要挡住脏数据——
+// 真的问 mdm/customer，不是本地判断。
 func TestCreateOpportunity_真实客户不存在时拒绝(t *testing.T) {
 	requireE2EEnv(t)
 	db := testDB(t)

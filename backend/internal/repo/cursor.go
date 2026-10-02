@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// cursor 编码 (created_at, id)：keyset 分页，不是 offset（决策 53）。
+// cursor 编码 (created_at, id)：keyset 分页，不是 offset——深页不变慢，翻页时有新行插入也不跳行。
 type cursorKey struct {
 	CreatedAt time.Time
 	ID        int64

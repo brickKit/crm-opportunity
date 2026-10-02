@@ -1,28 +1,21 @@
 #!/usr/bin/env bash
-# 灌本组件自己的种子商机（总纲 SOP-W-7，本次重做加量 + 加时间跨度 +
-# 加 org 维数据权限真实样本）：
+# 灌本组件自己的种子商机，全部经真实 REST 接口建（幂等键 seed-opp-<n>，重跑
+# 时重放，不重复建）：
 #
-# ① seed-opp-1..5（原样保留，下游/历史脚本可能反查过，只增不改）：真实
-#    调 REST 接口建 5 条示例商机（3 OPEN 分处不同阶段 + 1 WON + 1
-#    LOST），全部用 dev.superuser 的身份建。
-# ② seed-opp-6..10（本次新增）：改用 dev.sales.east（华东分部，
-#    dev_sales_rep 角色）的身份建，覆盖同样的状态谱系（OPEN 三个不同
-#    阶段 + 1 WON + 1 LOST）——dept_id/dept_path/owner_id 是创建时从
-#    调用者的 besdk.ScopeOf(ctx) 快照的（service.go 明文），必须真的用
-#    这个身份的 JWT 去调接口，不能建完再补写归属字段。这是"华东销售
-#    看不到别的部门商机"这条数据权限边界第一次有真实商机样本可以演示，
-#    不只是纯自动化测试里才存在。
+# ① seed-opp-1..5：dev.superuser 的身份，3 条 OPEN 分处不同阶段 + 1 WON +
+#    1 LOST。
+# ② seed-opp-6..10：dev.sales.east（华东分部，dev_sales_rep 角色）的身份，
+#    同样的状态谱系。dept_id/dept_path/owner_id 是创建时从调用者的
+#    besdk.ScopeOf(ctx) 快照的，必须真的用这个身份的 JWT 去调接口，不能建完
+#    再补写归属字段。这是"华东销售看不到别的部门商机"的演示样本。
 #
-# ⚠️ seed-opp-9 是本次新增的第二个 WON 商机——赢单会再真实触发一次
-# erp-sales 自动建单确认（同 seed-opp-4 的既有效果），这次归属是
-# dev.sales.east/华东，用来验证"赢单转订单，归属跟着走"这条判据不只在
-# dev.superuser 名下成立。
+# ⚠️ seed-opp-4 与 seed-opp-9 是两条 WON 商机：赢单真实触发 erp/sales 自动建单
+# 确认，seed-opp-9 的订单归属是 dev.sales.east/华东，演示"赢单转订单，归属
+# 跟着走"。
 #
-# ⚠️ seed-opp-11（本次新增，第 11 条）：唯一一条刻意会赢单失败的商机——
-# 用信用额度只有 ¥5000 的客户下一张远超额度的单，erp-sales 真实拒绝
-# 确认，真实建一条 infra-workflow 异常待办。这是给 infra-workflow"不用
-# 自己造假种子数据、靠真实业务失败路径就有真实待办可看"的样板，见下方
-# 该商机定义处的详细注释。
+# ⚠️ seed-opp-11：唯一一条刻意会赢单失败的商机——用信用额度只有 ¥5000 的
+# 客户下一张远超额度的单，erp/sales 真实拒绝确认，真实建一条 infra/workflow
+# 异常待办（见下方该商机定义处的注释）。
 #
 # ⚠️ 前置条件（本脚本自己不建，靠 Makefile 的 seed 目标链式调用）：
 #   - infra-iam-casdoor 的种子身份（dev.superuser + dev.sales.east +
@@ -71,8 +64,8 @@ PROD7="$(idfor mdm_product seed-product-7)"
 PROD8="$(idfor mdm_product seed-product-8)"
 PROD9="$(idfor mdm_product seed-product-9)"
 PROD10="$(idfor mdm_product seed-product-10)"
-[ -n "$CUST1" ] && [ -n "$CUST6" ] || die "拿不到 mdm-customer 的种子客户 id——先确认 make -C ../../mdm/customer seed 跑成功了（要 1-9 号，含本次新增的 6-9）"
-[ -n "$PROD1" ] && [ -n "$PROD6" ] || die "拿不到 mdm-product 的种子产品 id——先确认 make -C ../../mdm/product seed 跑成功了（要 1-10 号，含本次新增的 6-10）"
+[ -n "$CUST1" ] && [ -n "$CUST6" ] || die "拿不到 mdm-customer 的种子客户 id——先确认 make -C ../../mdm/customer seed 跑成功了（要 1-9 号）"
+[ -n "$PROD1" ] && [ -n "$PROD6" ] || die "拿不到 mdm-product 的种子产品 id——先确认 make -C ../../mdm/product seed 跑成功了（要 1-10 号）"
 
 mkopportunity() { # token key name cust prod qty price amount -> id
   curl -s -X POST "$CRM_REST/crm/opportunity/opportunities" \
@@ -112,7 +105,7 @@ OPP5="$(mkopportunity "$SUPERUSER_TOKEN" seed-opp-5 "「本地测试」滨海物
 lose_opportunity "$SUPERUSER_TOKEN" "$OPP5" seed-opp-5-lose "「本地测试」价格谈不拢"
 ok "商机（dev.superuser）：$OPP1(OPEN) $OPP2(PROPOSAL) $OPP3(NEGOTIATION) $OPP4(WON→已自动转订单) $OPP5(LOST)"
 
-echo "── ② dev.sales.east（华东分部）：5 条新增商机，同样覆盖 OPEN 三阶段/WON/LOST ──"
+echo "── ② dev.sales.east（华东分部）：5 条商机，同样覆盖 OPEN 三阶段/WON/LOST ──"
 OPP6="$(mkopportunity "$SALES_TOKEN" seed-opp-6 "「本地测试」华东·都市零售连锁超市·补货意向" "$CUST6" "$PROD6" 50 0.20 "3000.00")"
 OPP7="$(mkopportunity "$SALES_TOKEN" seed-opp-7 "「本地测试」华东·云帆软件科技·减速机采购方案" "$CUST7" "$PROD9" 8 1580.00 "120000.00")"
 stage_opportunity "$SALES_TOKEN" "$OPP7" seed-opp-7-stage 3
@@ -134,8 +127,8 @@ echo "   （$OPP4/$OPP9 赢单后 erp-sales 会真的各自动建一张订单，
 # 的做法是让一条真实业务流程真的失败，产生一条真实的异常待办。
 # CUST8（「本地测试」鲜达食品饮料，见 mdm-customer 自己的 seed 注释）
 # 信用额度只有 ¥5000，专门留着给这个场景用；这里用大额产品把订单金额
-# 做到远超额度，赢单后 erp-sales 的信用校验会真的拒绝确认（同
-# AGENTS.md 记载的 Task 14 信用超限 Saga 补偿场景），createOpportunity
+# 做到远超额度，赢单后 erp-sales 的信用校验会真的拒绝确认（erp/sales 的
+# 信用超限补偿路径），createOpportunity
 # ExceptionTask 会真的建一条 infra-workflow 待办，assignee 取事件里的
 # owner_id/dept_path——正好也是"华东"，让 infra-workflow 不需要独立
 # make seed 也有一条真实的、org/owner 维归属正确的异常待办可看。
@@ -150,11 +143,10 @@ OPP11="$(mkopportunity "$SALES_TOKEN" seed-opp-11 "「本地测试」华东·鲜
 win_opportunity "$SALES_TOKEN" "$OPP11" seed-opp-11-win
 ok "商机（dev.sales.east/华东）：$OPP11(WON→信用超限，erp-sales 真实拒绝确认，infra-workflow 真的多一条异常待办)"
 
-# ── 时间跨度回填：seed-opp-6..10 是本次新增，回填成"最近 4 周内逐步
-# 推进"的样子，跟 1-5（既有契约，不动）拉开新旧对比。opportunities 表
-# 不分区（AGENTS.md 既有判据），直接 UPDATE 安全。用 now() - interval
-# 写绝对值，不是 created_at - interval——重跑脚本不会越跑越早（同
-# mdm-customer/mdm-product/erp-finance 已验证过的既有判据）。
+# ── 时间跨度回填：seed-opp-6..10 回填成"最近 4 周内逐步推进"的样子，
+# 1-5 保持建档时间不动，列表里有新有旧。opportunities 表不分区，直接
+# UPDATE 安全。用 now() - interval 写绝对值，不是 created_at - interval——
+# 重跑脚本不会越跑越早。
 psqlx -q <<SQL
 SET search_path TO crm_opportunity;
 UPDATE opportunities SET created_at = now() - interval '25 days', updated_at = now() - interval '25 days' WHERE id = $OPP6;
@@ -163,4 +155,4 @@ UPDATE opportunities SET created_at = now() - interval '10 days', updated_at = n
 UPDATE opportunities SET created_at = now() - interval '5 days'  WHERE id = $OPP9;
 UPDATE opportunities SET created_at = now() - interval '2 days'  WHERE id = $OPP10;
 SQL
-ok "已给 5 条新增商机回填历史 created_at（最近 2-25 天内，逐步推进的时间线）"
+ok "已给 seed-opp-6..10 回填历史 created_at（最近 2-25 天内，逐步推进的时间线）"

@@ -2,16 +2,11 @@
 # 撤销 seed.sh 灌的种子商机——反查 command_idempotency 拿真实行 id 精确
 # 删除，不用名字模糊匹配。
 #
-# ⚠️ 本次重做把"清理 erp-sales 联带自动建的订单"这段逻辑从装配层
-# `infra/seed-data/clean.sh` 挪了过来（总纲 SOP-W-7 待办）：赢单转订单
-# 虽然是事件握手不是同步依赖（§1.4 铁律），但"清理我导致产生的联带
-# 数据"这件事本身没有第三方能比本组件自己更精确地知道该删哪几行——
-# 本组件知道自己种了哪几个 WON 商机、也知道 erp-sales 消费
-# crm.opportunity.won.v1 时用的幂等键固定是 `crm-won:<opportunity_id>`
-# （backend/internal/tcc/opportunity_won.go 的既有约定，跨组件事件
-# payload 的 opportunity_id 就是这个值），比装配层脚本原来"按种子客户
-# id 反查所有订单"的做法更精确（那种做法会把这几个客户名下所有订单都
-# 清掉，不管是不是这次 seed 建的）。
+# ⚠️ 同时清理 erp/sales 因赢单联带自动建的订单：赢单转订单是事件握手，
+# 不是同步依赖，但"清理我导致产生的联带数据"只有本组件最清楚该删哪几行——
+# 本组件知道自己种了哪几个 WON 商机，erp/sales 消费 crm.opportunity.won.v1
+# 时用的幂等键固定是 `crm-won:<opportunity_id>`，按它精确删除；不按种子客户
+# id 反查所有订单（那会把这几个客户名下不是 seed 建的订单也清掉）。
 set -euo pipefail
 C_GRN=$'\033[32m'; C_OFF=$'\033[0m'
 ok()  { echo "${C_GRN}✓${C_OFF} $*"; }

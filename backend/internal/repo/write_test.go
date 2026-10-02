@@ -1,9 +1,7 @@
-// 真实 Postgres 集成测试（同 erp-sales/erp-inventory/erp-finance 的既有
-// 判据）：TEST_PG_DSN 没设置就跳过，不伪造数据也不用内存里的假实现
-// 代替。⚠️ MarkWon 的测试额外真订阅 NATS、真跑 besdk.StartOutboxPump，
-// 断言事件真的发布到总线——这是阶段三计划文档对 Task 13 明文要求的
-// 验证标准："断言 opportunities 状态变化 + Outbox 记录 + 事件真的发布到
-// 总线，不是只测本组件内部状态，事件发布这一步必须真验"。
+// 真实 Postgres 集成测试：TEST_PG_DSN 没设置就跳过，不伪造数据也不用内存里
+// 的假实现代替。⚠️ MarkWon 的测试额外真订阅 NATS、真跑
+// besdk.StartOutboxPump，断言事件真的发布到总线：赢单是 erp/sales 建单的
+// 扳机，只看 event_outbox 里躺着一行，证明不了下游真的收得到。
 package repo
 
 import (
@@ -122,8 +120,8 @@ func TestCreateOpportunity_重复idempotencyKey幂等返回同一条(t *testing.
 	}
 }
 
-// TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线 是 Task 13 明文
-// 要求的核心验证：真订阅 crm.opportunity.won.v1，真跑
+// TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线：真订阅
+// crm.opportunity.won.v1，真跑
 // besdk.StartOutboxPump，断言事件真的从 event_outbox 被推到 NATS 总线，
 // 不是只看 event_outbox 表里躺着一行就算数。
 func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *testing.T) {
@@ -178,8 +176,9 @@ func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *te
 	if err := json.Unmarshal([]byte(payloadRaw), &payload); err != nil {
 		t.Fatal(err)
 	}
-	// ⭐ owner_id/dept_path 两个字段最容易漏（设计计划 §4.1）——直接断言
-	// 它们确实在 Outbox payload 里，且值等于建档时的快照。
+	// ⭐ owner_id/dept_path 两个字段最容易漏（漏了订单照样建出来，只是没有
+	// 归属、谁都看不到）——直接断言它们确实在 Outbox payload 里，且值等于
+	// 建档时的快照。
 	if payload["owner_id"] != "u_test_owner" {
 		t.Fatalf("owner_id 缺失或不对：%v", payload["owner_id"])
 	}
@@ -267,8 +266,8 @@ func TestMarkLost_真实转LOST且发布事件(t *testing.T) {
 	}
 }
 
-// TestMarkLost_必须填原因 验证契约要求：失单必须记原因（设计计划 §8，
-// 借鉴 Odoo loss reason）。
+// TestMarkLost_必须填原因 验证契约要求：失单必须记原因（失单原因是销售
+// 复盘最有用的那一列）。
 func TestMarkLost_必须填原因(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
@@ -338,8 +337,7 @@ func TestChangeStage_真实写历史且发布事件(t *testing.T) {
 	}
 }
 
-// TestChangeStage_probability手工覆盖 验证设计计划 §9 第 4 条：阶段带
-// 默认值 + 允许手工覆盖。
+// TestChangeStage_probability手工覆盖：概率取阶段默认值，允许手工覆盖。
 func TestChangeStage_probability手工覆盖(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()

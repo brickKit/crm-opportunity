@@ -20,8 +20,8 @@ const (
 	StatusCancelled = "CANCELLED"
 )
 
-// OpportunityItem 是 opportunity_items 一行的视图。**全部快照，不 join**
-// （设计计划 §2.1）。
+// OpportunityItem 是 opportunity_items 一行的视图。**全部快照，不 join**：
+// 产品数据在另一个组件的 schema 里，物理上 join 不到。
 type OpportunityItem struct {
 	ProductID       string
 	ProductSKU      string
@@ -33,7 +33,7 @@ type OpportunityItem struct {
 }
 
 // Opportunity 是 opportunities 一行 + 其行的视图 + 关联阶段名（读时 join，
-// 不落库）。dept_id/dept_path/owner_id 是创建时快照（设计计划 §1）。
+// 不落库）。dept_id/dept_path/owner_id 是创建时快照。
 type Opportunity struct {
 	ID                string
 	Name              string
@@ -47,7 +47,7 @@ type Opportunity struct {
 	Items             []OpportunityItem
 	ExpectedAmount    string
 	Probability       int
-	WeightedAmount    string // ⭐ = ExpectedAmount × Probability，算出来不存（设计计划 §2）
+	WeightedAmount    string // ⭐ = ExpectedAmount × Probability，读时现算、不落库
 	ExpectedCloseDate time.Time
 	Status            string
 	Currency          string
@@ -153,7 +153,7 @@ func (r *Repo) BatchGetOpportunities(ctx context.Context, ids []string) (found [
 	return found, missing, nil
 }
 
-// ListInput 对应 ListOpportunitiesRequest。刻意没有 offset 字段（决策 53）。
+// ListInput 对应 ListOpportunitiesRequest。刻意没有 offset 字段：只用游标分页。
 type ListInput struct {
 	Cursor        string
 	PageSize      int
@@ -163,9 +163,8 @@ type ListInput struct {
 	CreatedAfter  time.Time
 	CreatedBefore time.Time
 	// ── org/owner 两维数据范围，"我的商机"和"本部门及下级的商机"是
-	// 销售组织最基本的两个视图（设计计划 §1），同 erp-sales ListInput
-	// 的既有判据：由调用方（listOpportunitiesHandler 的 ?view= 参数）
-	// 静态选择用哪一个。
+	// 销售组织最基本的两个视图，与 erp/sales 的 ListInput 相同：由调用方
+	// （listOpportunitiesHandler 的 ?view= 参数）选择用哪一个，是切换不是 OR。
 	ViewMine    bool
 	ScopePrefix string
 	ScopeOwner  string
@@ -198,7 +197,7 @@ func (r *Repo) ListOpportunities(ctx context.Context, in ListInput) (*ListResult
 			query += fmt.Sprintf(" AND owner_id = $%d", len(args))
 		} else {
 			// ScopePrefix 为空（部门树根节点）时 `LIKE '' || '%'` 等价于
-			// `LIKE '%'`，天然匹配全部，不需要特判（§14.2.4 的既有判据）。
+			// `LIKE '%'`，匹配全部：部门路径为空的身份就是"全部"（besdk.ScopeOf 的 All）。
 			args = append(args, in.ScopePrefix)
 			query += fmt.Sprintf(" AND dept_path LIKE $%d || '%%'", len(args))
 		}
@@ -273,7 +272,7 @@ func (r *Repo) ListOpportunities(ctx context.Context, in ListInput) (*ListResult
 	return &out, nil
 }
 
-// normalizeCurrency 留空则按本位币默认值处理（标准版单币种，设计计划 §4.1）。
+// normalizeCurrency 留空则按本位币默认值处理（标准版单币种）。
 func normalizeCurrency(c string) string {
 	if strings.TrimSpace(c) == "" {
 		return "CNY"

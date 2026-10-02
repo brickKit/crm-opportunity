@@ -1,13 +1,11 @@
 // Package http 是 crm-opportunity 的 REST 面（对外路径前缀
 // /crm/opportunity，与 assembly.yaml 的 edge_routes 一致）。⚠️ 不暴露
-// BatchGetOpportunities——组件间协议，给 BFF 层 GraphQL Resolver 防 N+1
-// 用（设计计划 §3、§3.8）。
+// BatchGetOpportunities——那是组件之间的 gRPC 调用，给 BFF 一次取多条防 N+1。
 //
 // 赢单单独一个权限键 crm.opportunity.win，不与普通编辑合并——它会触发
-// 建单、锁库存、生成应收一整条链路，是本组件唯一有下游财务影响的动作
-// （设计计划 §3）。org+owner 两维数据范围（"本部门及下级"/"我的商机"）
-// 同 erp-sales 的既有判据：ListOpportunities 走 besdk.ScopeOf(ctx) 的
-// Prefix/Owner 两个字段。
+// 建单、锁库存、生成应收一整条链路，是本组件唯一有下游财务影响的动作。
+// org+owner 两维数据范围（"本部门及下级"/"我的商机"）与 erp/sales 相同：
+// ListOpportunities 走 besdk.ScopeOf(ctx) 的 Prefix/Owner 两个字段。
 package http
 
 import (
@@ -309,7 +307,7 @@ func stageHistoryHandler(svc *service.Service) gin.HandlerFunc {
 }
 
 // funnelHandler：GET /opportunities/funnel。?view=mine|dept 与列表是同一个切换
-// （省略时 dept）。每个阶段一行，按 sort_order；没有商机的阶段计 0。
+// （省略时 dept）。每个阶段占一行，按 sort_order；没有商机的阶段计 0。
 func funnelHandler(svc *service.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		stages, err := svc.Funnel(c.Request.Context(), c.Query("view") == "mine")

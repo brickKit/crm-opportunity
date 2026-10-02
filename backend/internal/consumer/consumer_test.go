@@ -95,7 +95,7 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 		t.Fatalf("期望 customer_snapshots.name='真实消费测试客户'，实际 %q（可能事件没有真的被消费到）", name)
 	}
 
-	// version 单调更新：旧版本事件不该覆盖新值（§3.10）。
+	// version 单调更新：旧版本事件不该覆盖新值。
 	publishEvent(t, nc, "mdm.customer.updated.v1", customerID, 0, // version=0 < 1，应被忽略
 		`{"id":"`+customerID+`","name":"不该生效的旧版本名字"}`)
 	time.Sleep(500 * time.Millisecond)

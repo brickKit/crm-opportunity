@@ -1,8 +1,8 @@
 // Package repo 是 crm-opportunity 的数据访问层：商机主体/行、阶段定义、
 // 阶段流转历史、客户展示快照。⚠️ 本组件没有 TCC 编排——两条强依赖
 // （mdm-customer/mdm-product 的 BatchGet）在 service 层直接校验完就写库，
-// 没有跨组件补偿链（设计计划 §5：不像 erp-sales 那样要发起 Reserve 这类
-// 需要撤销的远程动作）。
+// 没有跨组件补偿链（不像 erp/sales 那样要发起 Reserve 这类需要撤销的
+// 远程动作）。
 package repo
 
 import (
@@ -25,7 +25,7 @@ var ErrNotFound = errors.New("not found")
 var ErrOpportunityTerminal = errors.New("商机已经是终态，不能再流转")
 
 // ErrForbidden：调用者对某个具体商机既不在其 org 范围内也不是 owner
-// （§14.2.2 的 org+owner 两维）。⚠️ 这个商机真实存在，调用者只是看不见，
+// （org+owner 两维）。⚠️ 这个商机真实存在，调用者只是看不见，
 // 与 ErrNotFound 语义不同，不能混用。
 var ErrForbidden = errors.New("无权访问该商机")
 

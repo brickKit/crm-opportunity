@@ -9,9 +9,8 @@ import (
 	besdk "github.com/brickKit/be-sdk-go"
 )
 
-// Stage 是 opportunity_stages 一行的视图。阶段是数据不是代码（设计计划
-// §2.2），迁移播种，本组件不提供写接口——改阶段清单是运维操作，不是
-// 业务操作。
+// Stage 是 opportunity_stages 一行的视图。阶段是数据不是代码，由迁移播种，
+// 本组件不提供写接口——改阶段清单是运维操作，不是业务操作。
 type Stage struct {
 	ID                 string
 	Code               string
@@ -39,8 +38,7 @@ func getStageTx(ctx context.Context, tx *sql.Tx, id int64) (*Stage, error) {
 }
 
 // firstStageTx 返回 sort_order 最小的阶段——CreateOpportunity 建档时的
-// 默认起始阶段（契约没有留 stage_id 入参，设计计划 §3 的 CreateOpportunity
-// 描述只提"建档，校验客户与产品"，没有提"指定起始阶段"）。
+// 默认起始阶段（契约没有 stage_id 入参：建档即进漏斗第一格）。
 func firstStageTx(ctx context.Context, tx *sql.Tx) (*Stage, error) {
 	var id int64
 	if err := tx.QueryRowContext(ctx,

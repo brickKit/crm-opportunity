@@ -1,5 +1,5 @@
-// Package grpc 实现 crm.opportunity.v1.OpportunityService——内部 gRPC 面
-// （§2.1）。HTTP 与 gRPC 共用同一个 service.Service，业务逻辑只写一遍。
+// Package grpc 实现 crm.opportunity.v1.OpportunityService——组件之间调用的
+// gRPC 面。HTTP 与 gRPC 共用同一个 service.Service，业务逻辑只写一遍。
 package grpc
 
 import (
@@ -189,7 +189,7 @@ func (s *server) ListOpportunities(ctx context.Context, req *opportunityv1.ListO
 	return &opportunityv1.ListOpportunitiesResponse{Opportunities: opps, NextCursor: out.NextCursor}, nil
 }
 
-// BatchGetOpportunities 是防 N+1 的唯一合法调用方式（§3.8）。
+// BatchGetOpportunities 一次取多条：调用方逐条 Get 会变成 N+1 次网络往返。
 func (s *server) BatchGetOpportunities(ctx context.Context, req *opportunityv1.BatchGetOpportunitiesRequest) (*opportunityv1.BatchGetOpportunitiesResponse, error) {
 	found, missing, err := s.svc.BatchGetOpportunities(ctx, req.Ids)
 	if err != nil {

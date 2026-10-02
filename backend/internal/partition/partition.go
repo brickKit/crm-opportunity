@@ -1,12 +1,10 @@
 // Package partition 是 Module.Start 的后台循环之一：为 event_outbox/
-// event_inbox 自动创建未来的周分区（决策 54、§11.5.1）。
+// event_inbox 自动创建未来的周分区（迁移只建了头几周）。
 //
 // ⚠️ opportunities/opportunity_items/opportunity_stage_history 不分区
-// （设计计划 §2、§7），所以本组件没有月分区维护——只有这一个循环。
-// 这个循环必须从建仓库起就接上，不能"先建表、后面再补"：infra-workflow
-// 就是漏了它，第 5 周起 INSERT 会因为找不到覆盖的分区直接失败，且报错
-// 是 PostgreSQL 原生的"no partition of relation found for row"，完全
-// 看不出根因（根 docs/dev/实测踩坑记录.md C12）。
+// （一个销售机会一行，量级小），所以本组件没有月分区维护——只有这一个循环。
+// 漏了这个循环，迁移建好的几周分区用完后 INSERT 直接失败，报错是
+// PostgreSQL 原生的"no partition of relation found for row"，看不出根因。
 package partition
 
 import (
@@ -27,7 +25,7 @@ const (
 var weeklyPartitionedTables = []string{"event_outbox", "event_inbox"}
 
 // Start 立刻检查一次，之后每 24 小时检查一次。单次检查失败只记日志，
-// 不让整个循环退出（§13.3 铁律七）。
+// 不让整个循环退出：循环返回 error 会让 Start 退出，合进外壳时带走全部成员。
 func Start(ctx context.Context, db *sql.DB, role, schema string, logger *slog.Logger) error {
 	if err := ensureAllWeekly(ctx, db, role, schema); err != nil && ctx.Err() == nil {
 		logger.Error("周分区维护失败", "error", err)
