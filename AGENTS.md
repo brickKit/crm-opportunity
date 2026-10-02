@@ -8,7 +8,7 @@ The AI guide to developing this component. How to use it, its boundaries and con
 
 | Path | Owns |
 |---|---|
-| `backend/module/module.go` | The only entry, `New(ctx, rt)`: builds repo → service → HTTP + gRPC; `Start` runs the outbox pump, the partition loop and the event consumers side by side. Same function standalone and in a shell |
+| `backend/module/module.go` | The only entry, `New(ctx, rt)`: takes the database identity from `PG_USER` / `PG_SCHEMA` (`dbIdentity`), builds repo → service → HTTP + gRPC; `Start` runs the outbox pump, the partition loop and the event consumers side by side. Same function standalone and in a shell |
 | `backend/cmd/server/main.go` | One line, `besdk.RunStandalone(module.New)` |
 | `backend/cmd/migrate/main.go` | One line, `migrate.Main(migrations.FS)`: the migration container's entry (`./migrate up`) |
 | `backend/internal/repo/repo.go` | Sentinel errors (`ErrInvalidArgument`, `ErrNotFound`, `ErrOpportunityTerminal`, `ErrForbidden`), `InScope`, idempotency helpers |
@@ -30,7 +30,8 @@ The AI guide to developing this component. How to use it, its boundaries and con
 | `migrations/` | SQL migrations (tables, stage seeds, `order_id`, history probability), embedded by `migrations/embed.go` |
 | `contracts/` | proto, OpenAPI, event schema |
 | `gen/crm/opportunity/` | Generated Go code: a nested Go module with its own tags; never edited by hand |
-| `scripts/` | `seed.sh` / `seed-clean.sh` for local demo data |
+| `backend/testdb/` | Test only: the schema and role the database tests use (`TEST_PG_SCHEMA` / `TEST_PG_ROLE`, default the identity `make test-db-init` creates) and `Q` for `{schema}` in raw SQL; production code must not import it (`make module-check`) |
+| `scripts/` | `seed.sh` / `seed-clean.sh` for local demo data; `schema.sh` reads each component's `PG_SCHEMA` from the assembly project's configuration files |
 
 | Feature | Start here | Then |
 |---|---|---|
@@ -54,12 +55,12 @@ make check-version dag-check contract-check import-scan module-check   # each pr
 make docs-check              # "0 with errors, 0 warnings"
 ```
 
-The three skipped tests need `mdm/customer` and `mdm/product` running; from the project root, `make test-cross ID=crm/opportunity` points them at the running containers, and there they must pass. Migrations: `make test-db-init ID=crm/opportunity` at the project root runs them twice as `crm_opportunity_rw` (`✓ 迁移幂等`). After `buf generate` (contracts changed), the contract package needs a new tag: see Pitfalls. On a real machine, from the project root: `make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` builds the image, starts only what this component needs, checks migration, health and the permission check, runs a focus run, and tears down.
+The three skipped tests need `mdm/customer` and `mdm/product` running; from the project root, `make test-cross ID=crm/opportunity` points them at the running containers, and there they must pass. Migrations: `make test-db-init ID=crm/opportunity` at the project root runs them twice as the role the project registers for this component (`✓ 迁移幂等`). The whole suite also runs against another identity: migrate a schema as its own login role, then `TEST_PG_SCHEMA=<schema> TEST_PG_ROLE=<role> make test`; `backend/module/identity_test.go` does this by itself with throwaway names. After `buf generate` (contracts changed), the contract package needs a new tag: see Pitfalls. On a real machine, from the project root: `make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` builds the image, starts only what this component needs, checks migration, health and the permission check, runs a focus run, and tears down.
 
 ## Design decisions
 
 - **CRM and ERP exchange only events.** Winning publishes `crm.opportunity.won.v1`; the order ID returns through `sales.order.created.v1`. Nothing here calls `erp/*`.
-- **Two synchronous edges, both to master data,** used only when an opportunity is created and with the caller's token, so bad customers and products are blocked before anything is written.
+- **Two synchronous edges, both to master data,** used only when an opportunity is created, through `besdk.UserClient` (see BRICKKIT on what it forwards), so bad customers and products are blocked before anything is written.
 - **Every write is idempotent and commits together with its event** (`runCommand`): a committed change always publishes, a rolled-back one never does.
 - **Numbers are validated with regular expressions, not by the database:** `NUMERIC` stores `NaN` and rounds extra decimals silently.
 - **The weighted amount is computed, never stored**; all money arithmetic is decimal.
@@ -78,6 +79,7 @@ The three skipped tests need `mdm/customer` and `mdm/product` running; from the 
 | Overwrite a non-empty `order_id` in the consumer | The first order silently loses its link to the opportunity | One opportunity converts once; a conflict is a data problem for a person |
 | Drop `owner_id` or `dept_path` from the won event | `erp/sales` creates the order, but nobody's list shows it | The order inherits the opportunity's ownership from the event; there is no user token in that handler |
 | Call `mdm/customer` / `mdm/product` inside the repo transaction | Under a slow dependency, row locks are held for seconds and other writes queue | The service calls them first; the repo never makes network calls |
+| Name a role or a schema in code, a migration (`OWNER TO …`, `schema.table`), a test or a seed script, or derive the role from the schema | Green here, then a deployer's own schema or role fails: the module switches to a role that does not exist (`500` on every route) or the migration stops on `must be able to SET ROLE` | The identity is `PG_USER` and `PG_SCHEMA`, nothing else; the migration runs as `PG_USER`, so it already owns what it creates. Tests take it from `backend/testdb`, seeds from `scripts/schema.sh`; `backend/module/identity_test.go` fails on any fixed name |
 | Publish to production subjects in a consumer test | Fails at random while the component's container runs: the container consumes the test message and writes to the demo database | Start the consumer with test-private subjects (`start(…, subjects{…})`) |
 | Change a comment or option in `contracts/crm/opportunity/v1/opportunity.proto` without tagging the contract package | Builds pass locally (the `replace` hides it); a shell fetching `crm-opportunity/v2` compiles against the old `gen/` | Any change under `gen/crm/opportunity/` needs a new contract-package tag and the root `go.mod` requiring it |
 

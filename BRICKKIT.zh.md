@@ -20,18 +20,18 @@
 
 ## 部署前准备
 
-- **PostgreSQL**：schema `crm_opportunity`；如果你的 schema 约定会建 `crm_opportunity_archive` 也可以建（目前没有任务写它）。登录角色 `crm_opportunity_rw`，在 `crm_opportunity` 上有 `USAGE` 与 `CREATE`，以及它的密码。迁移以这个角色运行，建表并写入阶段定义，所以表归它所有——这一点有用：运行中的组件会自己给 `event_outbox` / `event_inbox` 建周分区，这需要表的所有权。brickKit 不建这些；在 BrickEnterprise 装配项目里，`make dev-env` 把密码写进 `.env`，`make db-init` 建 schema、角色与授权。
+- **PostgreSQL**：一个 schema、一个在它上面有 `USAGE` 与 `CREATE` 的登录角色，以及这个角色的密码。名字随意：组件从 `PG_SCHEMA` 取 schema、从 `PG_USER` 取角色，代码和迁移里都不出现任何角色名或 schema 名。迁移以这个角色运行，所以它建的每张表都归它所有——这一点有用：运行中的组件会自己给 `event_outbox` / `event_inbox` 建周分区，这需要表的所有权。托管在外壳里时，外壳自己的登录角色必须是这个角色的成员（模块每个事务用 `SET LOCAL ROLE` 切换到它）。如果你建了 `<PG_SCHEMA>_archive`，它也在 search_path 里；目前没有任务写它。brickKit 不建这些。BrickEnterprise 装配项目里，名字来自它的注册表（`crm_opportunity`、`crm_opportunity_rw`）：`make dev-env` 把密码写进 `.env`，`make db-init` 建 schema、角色与授权——那只是这个项目提供它们的方式。
 - **NATS** 可经 `NATS_URL` 访问：事件先写 Outbox 表，再由后台循环推送；`mdm.customer.*` 与 `sales.order.created.v1` 的消费者也在那里订阅。NATS 不可达时组件照常启动，事件留在 Outbox 里等待。
 - **`mdm/customer` 与 `mdm/product`** 在运行：建商机时同步地对照它们校验客户与每个产品。
 - **权限**（`infra/authz`）与**身份**（`infra/iam-casdoor`，或任何提供 JWKS 的 IAM）可经 `AUTHZ_BUNDLE_URL`、`IAM_JWKS_URL` 访问，REST 路由才会返回错误以外的结果。用户 token 必须带 `sub` 与 `dept_path`：它们成为商机的负责人与部门，决定谁看得见它。没有部门的用户（`dept_path` 为空）只看得到自己负责的商机，他建的商机也没有部门；要看全公司，就把用户分到根部门。它们是配置不是依赖：没有它们组件照样启动。
-- 演示数据（可选）：在组件目录 `make seed`，先跑身份、权限、客户、产品的 seed，再以两个身份（超级用户与华东区销售，用来演示部门范围）经真实 REST 接口建 11 个示例商机。其中三个赢单，`erp/sales` 在运行时会收到它们的事件；其中一个刻意超出客户的信用额度，`erp/sales` 会拒绝它的订单。
+- 演示数据（可选）：在组件目录 `make seed`，先跑身份、权限、客户、产品的 seed，再以两个身份（超级用户与华东区销售，用来演示部门范围）经真实 REST 接口建 11 个示例商机。其中三个赢单，`erp/sales` 在运行时会收到它们的事件；其中一个刻意超出客户的信用额度，`erp/sales` 会拒绝它的订单。汇总行在 `erp/sales` 确认订单之后列出每条赢单的订单号，没有订单回来时也照实说。
 
 ## 依赖说明
 
 - `mdm/customer`（必需）：建商机时 `BatchGet`，确认客户存在且启用，并复制它的名称。名称副本此后靠 `mdm.customer.created.v1` / `mdm.customer.updated.v1` 保持最新。
 - `mdm/product`（必需）：建商机时 `BatchGet`，确认每个产品存在且启用，并把 SKU、名称、基本单位复制到商机行上。
 
-两者都经 gRPC、以调用者的 token 调用，每次调用 3 秒超时；超时答 `504`，依赖不可达答 `503`。不依赖 `erp/sales`：两者之间只有事件（一个方向是 `crm.opportunity.won.v1`，另一个方向是 `sales.order.created.v1`），所以没有 ERP 的项目照样能跑本组件，只是 `order_id` 一直为空。
+两者都经 gRPC、用 `besdk.UserClient` 调用，它本意是透传调用者的 token（SDK v0.5.0 只透传经 gRPC 进来的 token，所以处理 REST 请求时发出的调用不带 token），每次调用 3 秒超时；超时答 `504`，依赖不可达答 `503`。不依赖 `erp/sales`：两者之间只有事件（一个方向是 `crm.opportunity.won.v1`，另一个方向是 `sales.order.created.v1`），所以没有 ERP 的项目照样能跑本组件，只是 `order_id` 一直为空。
 
 权限 bundle 与 JWKS 从配置里的 URL 拉取，不是依赖边。没有它们时每条受保护路由都失败关闭：没有或无效的 token → `401`；`IAM_JWKS_URL` 为空或不可达 → `403`；还没拉到过 bundle → `503`；合法用户但没有这个权限键 → `403`。`/healthz` 始终 `200`：它只报告本进程活着。
 
@@ -41,10 +41,10 @@
 |---|---|
 | `PG_HOST` | PostgreSQL 主机。通常写项目的共享值（`$var:PG_HOST`）。 |
 | `PG_PORT` | PostgreSQL 端口；默认 `5432`。 |
-| `PG_DATABASE` | 放 `crm_opportunity` schema 的数据库（`$var:PG_DATABASE`）。 |
-| `PG_USER` | 登录角色，字面量 `crm_opportunity_rw`。在外壳里，外壳以自己的角色登录，每个事务切换到这个角色（`SET LOCAL ROLE`），所以角色名必须是 `<PG_SCHEMA>_rw`。 |
+| `PG_DATABASE` | 放这个 schema 的数据库（`$var:PG_DATABASE`）。 |
+| `PG_USER` | 登录角色，表归它所有。单跑时组件以它登录；在外壳里，外壳以自己的角色登录，每个事务切换到这个角色（`SET LOCAL ROLE`）。名字随意，不由 `PG_SCHEMA` 推出。只许小写字母开头、小写字母数字下划线，否则组件启动即失败。 |
 | `PG_PASSWORD` | `PG_USER` 的密码。密钥：写 `${CRM_OPPORTUNITY_DB_PASSWORD}`（或你的密钥库引用），永远不写值本身。 |
-| `PG_SCHEMA` | 全部表、Outbox 与迁移状态表（`schema_migrations_crm_opportunity`）所在的 schema；默认 `crm_opportunity`。仍然写上字面量，让每个组件的 schema 在一处就能看全。 |
+| `PG_SCHEMA` | 全部表、Outbox 与迁移状态表（`schema_migrations_<PG_SCHEMA>`）所在的 schema；默认 `crm_opportunity`。名字随意，字符规则同 `PG_USER`。仍然写上字面量，让每个组件的 schema 在一处就能看全。 |
 | `NATS_URL` | 发布与消费事件用的 NATS 服务器（`$var:NATS_URL`）。 |
 | `OTEL_BASE_URL` | OpenTelemetry collector 的基地址；为空（默认）时不导出。 |
 | `AUTHZ_BUNDLE_URL` | 权限判定轮询的 bundle 地址，例如 `http://infra-authz-2-0-0:8223/authz/bundle`。必填：没有它每条受保护路由都答 `503`。要与项目运行的 authz 版本保持一致。 |

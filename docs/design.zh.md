@@ -127,7 +127,15 @@ REST 在 `/crm/opportunity` 下：
 
 `opportunities`、`opportunity_items`、`opportunity_stage_history` 不分区：一个销售机会一行，比交易流水少一到两个数量级。`event_outbox` 与 `event_inbox` 按周分区。
 
-归档规则：终态商机（`WON`、`LOST`、`CANCELLED`）超过 24 个月连同行与历史移入 `crm_opportunity_archive`；`OPEN` 商机不论多旧都留在热数据里。窗口比订单流水长，因为销售分析要拿一个季度和去年同一季度比。`opportunity_stages` 与 `customer_snapshots` 从不归档。
+归档规则：终态商机（`WON`、`LOST`、`CANCELLED`）超过 24 个月连同行与历史移入 `<PG_SCHEMA>_archive`；`OPEN` 商机不论多旧都留在热数据里。窗口比订单流水长，因为销售分析要拿一个季度和去年同一季度比。`opportunity_stages` 与 `customer_snapshots` 从不归档。
+
+## 数据库身份
+
+组件不认识任何数据库名字。schema 是 `PG_SCHEMA`，每个事务切换到的角色（`SET LOCAL ROLE`）是 `PG_USER`，两个都来自配置；迁移里两个都不写，不带限定名的表名经迁移入口设好的 search_path 解析。单跑时 `PG_USER` 就是连接池登录的角色；在外壳里，连接池以外壳的身份登录，每个成员切换到自己的 `PG_USER`。两个键缺一个、或者不是普通的小写标识符，`module.New` 就拒绝启动：名字配错了在启动时失败，而不是第一个请求才失败。
+
+以前角色由 schema 推出（`<PG_SCHEMA>_rw`），迁移在每个 `CREATE TABLE` 后面写 `OWNER TO crm_opportunity_rw`。这样 `PG_SCHEMA` 只是名义上可配：换一个 schema，切换到的角色不存在；换一个登录角色，迁移在写死的属主上失败。两处错的是设计，不只是代码：组件必须能部署进部署者给的任何 schema 和角色，数据库必须可以更换。已经执行过的 001、002 两个迁移删掉了 `OWNER TO`；这对已有的库没有任何影响：执行过的迁移不会再跑，库里的表本来就归那个角色（`make test-db-init` 前后，测试库与演示库的属主都没有变）。`backend/module/identity_test.go` 证明这一点：在测试库里建一个名字互不相干的 schema 和登录角色，以这个角色迁移，核对每张表都归它，再经 `module.New` 让后台循环建分区、写一条商机再读回来，单跑与外壳成员两种形态都走一遍。
+
+测试守同一条规则：schema 与角色来自 `backend/testdb`（`TEST_PG_SCHEMA` / `TEST_PG_ROLE`，默认是 `make test-db-init` 建的那一套）；种子脚本从项目的 `config/` 读每个组件的 schema。
 
 ## 数据范围
 
@@ -163,7 +171,7 @@ REST 在 `/crm/opportunity` 下：
 |---|---|
 | `order_id` 从 `sales.order.created.v1` 回填，而 `erp/sales` 在订单确认时才发它：停在草稿的订单（例如超出信用额度）让 `order_id` 一直为空 | 暂时接受："已转化"意味着"存在一张已确认的订单"。如果界面也要看草稿订单，由 `erp/sales` 增加一个草稿已建的事件，本消费者再订阅它 |
 | 没有部门的人建的商机，在他被分到部门之后 `dept_path` 仍是空串 | 接受：部门是建档时的快照，没有任何记录说明这一行"本该"属于哪个部门。要紧的话由人手工改负责人（`PATCH`）；部门列仍是快照 |
-| gRPC 服务端没有 token 验签：需要调用者数据范围的读写经 gRPC 会失败，`BatchGetOpportunities` 不加任何范围 | SDK 还没有 gRPC 认证拦截器；面向用户的是 REST。在 SDK 里补，不在这里补 |
+| gRPC 服务端没有 token 验签：需要调用者数据范围的读写经 gRPC 会失败，`BatchGetOpportunities` 不加任何范围。发出的调用也不带 token：`besdk.UserClient` 只透传经 gRPC 进来的 `authorization`，REST 请求没有它 | SDK 还没有 gRPC 认证拦截器；面向用户的是 REST。在 SDK 里补，不在这里补 |
 | 还没有归档终态商机的任务 | 上面的规则不变；任务随项目的归档工作一起来 |
 | 漏斗转化率与预测 | 这里只有各阶段的合计。转化分析归分析类组件，由 `crm.opportunity.stage_changed.v1` 喂数据，不归业务组件 |
 | 客户在主数据里还不存在的商机（潜在客户） | 不支持：客户必须先存在。潜在客户归将来的 CRM 客户组件 |

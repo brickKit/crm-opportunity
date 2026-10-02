@@ -8,7 +8,7 @@
 
 | 路径 | 负责 |
 |---|---|
-| `backend/module/module.go` | 唯一入口 `New(ctx, rt)`：组装 repo → service → HTTP + gRPC；`Start` 并发跑 Outbox 推送、分区循环与事件消费者。单跑与外壳里是同一个函数 |
+| `backend/module/module.go` | 唯一入口 `New(ctx, rt)`：从 `PG_USER` / `PG_SCHEMA` 取数据库身份（`dbIdentity`），组装 repo → service → HTTP + gRPC；`Start` 并发跑 Outbox 推送、分区循环与事件消费者。单跑与外壳里是同一个函数 |
 | `backend/cmd/server/main.go` | 一行 `besdk.RunStandalone(module.New)` |
 | `backend/cmd/migrate/main.go` | 一行 `migrate.Main(migrations.FS)`：迁移容器的入口（`./migrate up`） |
 | `backend/internal/repo/repo.go` | 哨兵错误（`ErrInvalidArgument`、`ErrNotFound`、`ErrOpportunityTerminal`、`ErrForbidden`）、`InScope`、幂等辅助函数 |
@@ -30,7 +30,8 @@
 | `migrations/` | SQL 迁移（表、阶段播种、`order_id`、历史的概率列），由 `migrations/embed.go` 嵌入 |
 | `contracts/` | proto、OpenAPI、事件 schema |
 | `gen/crm/opportunity/` | 生成的 Go 代码：独立的嵌套 Go 模块，有自己的 tag；永远不手改 |
-| `scripts/` | 本地演示数据的 `seed.sh` / `seed-clean.sh` |
+| `backend/testdb/` | 只给测试用：连库测试用的 schema 与角色（`TEST_PG_SCHEMA` / `TEST_PG_ROLE`，默认是 `make test-db-init` 建的那一套），以及把原始 SQL 里的 `{schema}` 换掉的 `Q`；生产代码不许 import 它（`make module-check`） |
+| `scripts/` | 本地演示数据的 `seed.sh` / `seed-clean.sh`；`schema.sh` 从装配项目的配置文件读每个组件的 `PG_SCHEMA` |
 
 | 要做的事 | 从这里开始 | 然后 |
 |---|---|---|
@@ -54,12 +55,12 @@ make check-version dag-check contract-check import-scan module-check   # 各打�
 make docs-check              # "0 with errors, 0 warnings"
 ```
 
-三条跳过的测试要 `mdm/customer` 与 `mdm/product` 在跑；在项目根 `make test-cross ID=crm/opportunity` 把它们指到正在跑的容器上，在那里必须通过。迁移：项目根 `make test-db-init ID=crm/opportunity` 以 `crm_opportunity_rw` 连跑两次（`✓ 迁移幂等`）。`buf generate` 之后（契约变了）契约包要打新 tag：见易错点。真机上，在项目根：`make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` 构建镜像、只起本组件需要的东西、核对迁移、健康检查与权限判定、跑一次 focus，最后拆掉。
+三条跳过的测试要 `mdm/customer` 与 `mdm/product` 在跑；在项目根 `make test-cross ID=crm/opportunity` 把它们指到正在跑的容器上，在那里必须通过。迁移：项目根 `make test-db-init ID=crm/opportunity` 以项目给本组件注册的角色连跑两次（`✓ 迁移幂等`）。整套测试也能换一个身份跑：以某个 schema 自己的登录角色迁移进去，再 `TEST_PG_SCHEMA=<schema> TEST_PG_ROLE=<role> make test`；`backend/module/identity_test.go` 自己用一次性的名字做这件事。`buf generate` 之后（契约变了）契约包要打新 tag：见易错点。真机上，在项目根：`make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` 构建镜像、只起本组件需要的东西、核对迁移、健康检查与权限判定、跑一次 focus，最后拆掉。
 
 ## 设计取舍
 
 - **CRM 与 ERP 之间只有事件。** 赢单发 `crm.opportunity.won.v1`；订单 ID 经 `sales.order.created.v1` 回来。这里没有任何对 `erp/*` 的调用。
-- **两条同步边，都指向主数据**，只在建商机时用、以调用者的 token 调，所以坏的客户与产品在写入任何东西之前就被挡住。
+- **两条同步边，都指向主数据**，只在建商机时用、经 `besdk.UserClient` 调（它透传什么见 BRICKKIT），所以坏的客户与产品在写入任何东西之前就被挡住。
 - **每个写命令都幂等，并与它的事件一起提交**（`runCommand`）：提交了的变更一定发事件，回滚了的一定不发。
 - **数字用正则校验，不靠数据库：** `NUMERIC` 会存下 `NaN`，多出的小数位会被悄悄四舍五入。
 - **加权金额现算、从不落库**；所有金额运算都按十进制。
@@ -78,6 +79,7 @@ make docs-check              # "0 with errors, 0 warnings"
 | 在消费者里覆盖非空的 `order_id` | 第一张订单悄悄和商机断了联系 | 一个商机只转一次单；冲突是要人去看的数据问题 |
 | 从赢单事件里去掉 `owner_id` 或 `dept_path` | `erp/sales` 照样建出订单，但谁的列表里都看不到 | 订单从事件里继承商机的归属；那个 handler 里没有用户 token |
 | 在 repo 的事务里调 `mdm/customer` / `mdm/product` | 依赖一慢，行锁就被占上几秒，别的写入排队 | service 先调它们；repo 从不发网络调用 |
+| 在代码、迁移（`OWNER TO …`、`schema.表`）、测试或种子脚本里写角色名或 schema 名，或者由 schema 推出角色 | 这里全绿，换成部署者自己的 schema 或角色就失败：模块切换到一个不存在的角色（每条路由 `500`），或迁移停在 `must be able to SET ROLE` | 身份只有 `PG_USER` 与 `PG_SCHEMA`；迁移以 `PG_USER` 运行，它建的东西本来就归它。测试从 `backend/testdb` 取，种子从 `scripts/schema.sh` 取；`backend/module/identity_test.go` 遇到任何写死的名字都会失败 |
 | 在消费者测试里往生产 subject 发布 | 组件容器在跑时随机失败：容器消费掉测试消息、写进演示库 | 用测试私有 subject 启动消费者（`start(…, subjects{…})`） |
 | 改 `contracts/crm/opportunity/v1/opportunity.proto` 的注释或选项却不给契约包打 tag | 本地构建照过（`replace` 把问题盖住了）；拉 `crm-opportunity/v2` 的外壳对着旧的 `gen/` 编译 | `gen/crm/opportunity/` 下任何变化都要打新的契约包 tag，并让根 `go.mod` require 它 |
 

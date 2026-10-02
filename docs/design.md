@@ -127,7 +127,15 @@ Two outgoing edges (`mdm/customer`, `mdm/product`), both to master data that cal
 
 `opportunities`, `opportunity_items` and `opportunity_stage_history` are not partitioned: one row per sales opportunity is one to two orders of magnitude fewer rows than transaction ledgers. `event_outbox` and `event_inbox` are partitioned weekly.
 
-Archiving rule: a terminal opportunity (`WON`, `LOST`, `CANCELLED`) older than 24 months moves to `crm_opportunity_archive`, with its lines and history; `OPEN` opportunities stay hot however old. The window is longer than the order ledger's because sales analysis compares a quarter with the same quarter a year earlier. `opportunity_stages` and `customer_snapshots` are never archived.
+Archiving rule: a terminal opportunity (`WON`, `LOST`, `CANCELLED`) older than 24 months moves to `<PG_SCHEMA>_archive`, with its lines and history; `OPEN` opportunities stay hot however old. The window is longer than the order ledger's because sales analysis compares a quarter with the same quarter a year earlier. `opportunity_stages` and `customer_snapshots` are never archived.
+
+## Database identity
+
+The component knows no database names. The schema is `PG_SCHEMA` and the role every transaction switches to (`SET LOCAL ROLE`) is `PG_USER`, both from configuration; the migrations name neither, and unqualified table names resolve through the search path the migration entry sets. Standalone, `PG_USER` is the role the pool logs in with; in a shell the pool logs in as the shell and each member switches to its own `PG_USER`. `module.New` refuses to start when either is missing or is not a plain lower-case identifier, so a wrong name fails at start, not on the first request.
+
+Earlier the role was derived as `<PG_SCHEMA>_rw` and the migrations ended every `CREATE TABLE` with `OWNER TO crm_opportunity_rw`. That made `PG_SCHEMA` configurable in name only: any other schema switched to a role that did not exist, and any other login role failed the migration on the hard-coded owner. Both were wrong in design, not just in code: a component must be deployable into whatever schema and role a deployer provides, and the database must be swappable. The `OWNER TO` lines were removed from the already applied migrations 001 and 002; existing databases are unaffected, because an applied migration is never run again and their tables already belong to that role (`make test-db-init` left every owner unchanged in both the test and the demo database). `backend/module/identity_test.go` proves the result: it creates a schema and a login role with unrelated names in the test database, migrates as that role, checks that the role owns every table, and through `module.New` lets the background loop create partitions and writes and reads an opportunity, both standalone and as a shell member.
+
+The tests follow the same rule: their schema and role come from `backend/testdb` (`TEST_PG_SCHEMA` / `TEST_PG_ROLE`, by default the identity `make test-db-init` creates), and the seed scripts read each component's schema from the project's `config/`.
 
 ## Data scopes
 
@@ -163,7 +171,7 @@ Two real differences between products, both decided as customer forks rather tha
 |---|---|
 | `order_id` is backfilled from `sales.order.created.v1`, which `erp/sales` publishes when the order is confirmed: an order stuck in draft (for example over the credit limit) leaves `order_id` empty | Accepted for now: "converted" means "a confirmed order exists". If screens need draft orders too, `erp/sales` adds an event for created drafts and this consumer subscribes to it as well |
 | An opportunity created by someone without a department keeps an empty `dept_path` after they are placed in one | Accepted: the department is a snapshot taken at creation, and nothing records which department the row "should" have had. If it matters, a person changes its owner by hand (`PATCH`); the department column stays a snapshot |
-| The gRPC server has no token verification: reads and writes that need the caller's data scope fail over gRPC, and `BatchGetOpportunities` applies no scope | The SDK has no gRPC authentication interceptor yet; REST is the user-facing surface. To be closed in the SDK, not here |
+| The gRPC server has no token verification: reads and writes that need the caller's data scope fail over gRPC, and `BatchGetOpportunities` applies no scope. Outgoing calls carry no token either: `besdk.UserClient` forwards only an `authorization` that arrived over gRPC, which a REST request does not have | The SDK has no gRPC authentication interceptor yet; REST is the user-facing surface. To be closed in the SDK, not here |
 | No job archives terminal opportunities yet | The rule above stands; the job comes with the project's archiving work |
 | Funnel conversion rates and forecasts | Only the per-stage sums live here. Conversion analysis belongs to an analytics component fed by `crm.opportunity.stage_changed.v1`, not to the business component |
 | An opportunity whose customer does not exist yet in master data (prospects) | Not supported: the customer must exist. Prospects belong to a future CRM customer component |
