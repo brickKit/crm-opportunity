@@ -11,6 +11,7 @@ import (
 	opportunityv1 "github.com/brickKit/crm-opportunity/gen/crm/opportunity/v1"
 	"google.golang.org/grpc"
 
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/consumer"
 	grpcapi "github.com/brickKit/crm-opportunity/v2/backend/internal/grpc"
 	httpapi "github.com/brickKit/crm-opportunity/v2/backend/internal/http"
@@ -26,7 +27,7 @@ func New(ctx context.Context, rt *besdk.Runtime) (*besdk.Module, error) {
 	role := schema + "_rw"
 
 	r := repo.New(rt.DB, role, schema)
-	svc := service.New(r, rt.Config, rt.Logger)
+	svc := service.New(r, client.New(rt.Config, client.DefaultTimeout), rt.Logger)
 
 	// HTTP：engine 必须用 besdk.NewGinEngine，它已挂好 OTel / request-id /
 	// error→status / PII 脱敏日志 / RED 指标 / /healthz / /metrics。

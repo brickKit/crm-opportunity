@@ -128,7 +128,7 @@ func TestCreateOpportunity_真实校验客户与产品并取展示快照(t *test
 	ctx := e2eTestCtx()
 
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, e2eConfig(), slog.Default())
+	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	customerID, customerName := createRealCustomer(t, ctx)
 	productID, productSKU, productName := createRealProduct(t, ctx)
@@ -184,7 +184,7 @@ func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, e2eConfig(), slog.Default())
+	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_someone_else")
 
@@ -201,7 +201,7 @@ func TestGetOpportunity_owner精确命中即使部门不同(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, e2eConfig(), slog.Default())
+	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_e2e_test_owner")
 
@@ -222,7 +222,7 @@ func TestCreateOpportunity_真实客户不存在时拒绝(t *testing.T) {
 	ctx := e2eTestCtx()
 
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, e2eConfig(), slog.Default())
+	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	productID, _, _ := createRealProduct(t, ctx)
 	_, err := svc.CreateOpportunity(ctx, CreateOpportunityInput{

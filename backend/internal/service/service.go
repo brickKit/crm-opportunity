@@ -26,12 +26,12 @@ var ErrInvalidArgument = errors.New("参数不合法")
 
 type Service struct {
 	repo   *repo.Repo
-	cfg    besdk.Config
+	deps   *client.Deps
 	logger *slog.Logger
 }
 
-func New(r *repo.Repo, cfg besdk.Config, logger *slog.Logger) *Service {
-	return &Service{repo: r, cfg: cfg, logger: logger}
+func New(r *repo.Repo, deps *client.Deps, logger *slog.Logger) *Service {
+	return &Service{repo: r, deps: deps, logger: logger}
 }
 
 // checkOpportunityInScope 是 UpdateOpportunity/ChangeStage/MarkWon/
@@ -78,16 +78,10 @@ func uniqueStrings(in []string) []string {
 	return out
 }
 
-// fetchActiveCustomer 校验客户存在且可用——建档那一刻就要挡住脏数据，
-// 事后对账挡不住（设计计划 §3）。
-func fetchActiveCustomer(ctx context.Context, cfg besdk.Config, customerID string) (*customerv1.Customer, error) {
-	conn, closeConn, err := client.Customer(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer closeConn()
-
-	resp, err := conn.BatchGet(ctx, &customerv1.BatchGetRequest{Ids: []string{customerID}})
+// fetchActiveCustomer 校验客户存在且可用：建档那一刻就要挡住脏数据，事后
+// 对账挡不住。
+func (s *Service) fetchActiveCustomer(ctx context.Context, customerID string) (*customerv1.Customer, error) {
+	resp, err := s.deps.BatchGetCustomers(ctx, []string{customerID})
 	if err != nil {
 		return nil, fmt.Errorf("校验客户失败: %w", err)
 	}
@@ -102,15 +96,9 @@ func fetchActiveCustomer(ctx context.Context, cfg besdk.Config, customerID strin
 }
 
 // fetchActiveProducts 校验产品存在且可用，返回按 id 索引的 map 供调用方
-// 取展示快照（sku/name/uom）。
-func fetchActiveProducts(ctx context.Context, cfg besdk.Config, productIDs []string) (map[string]*productv1.Product, error) {
-	conn, closeConn, err := client.Product(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	defer closeConn()
-
-	resp, err := conn.BatchGet(ctx, &productv1.BatchGetRequest{Ids: productIDs})
+// 取展示快照（sku / name / uom）。
+func (s *Service) fetchActiveProducts(ctx context.Context, productIDs []string) (map[string]*productv1.Product, error) {
+	resp, err := s.deps.BatchGetProducts(ctx, productIDs)
 	if err != nil {
 		return nil, fmt.Errorf("校验产品失败: %w", err)
 	}
@@ -165,7 +153,7 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		}
 	}
 
-	customer, err := fetchActiveCustomer(ctx, s.cfg, in.CustomerID)
+	customer, err := s.fetchActiveCustomer(ctx, in.CustomerID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +162,7 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 	for _, it := range in.Items {
 		productIDs = append(productIDs, it.ProductID)
 	}
-	products, err := fetchActiveProducts(ctx, s.cfg, uniqueStrings(productIDs))
+	products, err := s.fetchActiveProducts(ctx, uniqueStrings(productIDs))
 	if err != nil {
 		return nil, err
 	}
