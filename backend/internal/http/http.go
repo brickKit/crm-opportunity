@@ -233,14 +233,26 @@ func getOpportunityHandler(svc *service.Service) gin.HandlerFunc {
 
 // listOpportunitiesHandler：?view=mine|dept 决定用 owner 维还是 org 维
 // （见 repo.ListInput 同名字段注释）。省略时默认 dept——"本部门及下级"
-// 是更常见的默认视角（同 erp-sales listOrdersHandler 的既有判据）。
+// 是更常见的默认视角。created_after / created_before 不传时由 SDK 注入最近
+// 90 天的窗口；格式不对答 400，不悄悄退回默认窗口。
 func listOpportunitiesHandler(svc *service.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		pageSize, _ := strconv.Atoi(c.Query("page_size"))
+		after, err := parseTimeRFC3339OrEmpty(c.Query("created_after"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "created_after 格式不对：" + err.Error()})
+			return
+		}
+		before, err := parseTimeRFC3339OrEmpty(c.Query("created_before"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "created_before 格式不对：" + err.Error()})
+			return
+		}
 		out, err := svc.ListOpportunities(c.Request.Context(), repo.ListInput{
 			Cursor: c.Query("cursor"), PageSize: pageSize,
 			CustomerID: c.Query("customer_id"), StatusFilter: c.Query("status_filter"),
 			StageIDFilter: c.Query("stage_id_filter"), ViewMine: c.Query("view") == "mine",
+			CreatedAfter: after, CreatedBefore: before,
 		})
 		if err != nil {
 			_ = c.Error(service.ToStatus(err))
