@@ -37,6 +37,7 @@ func RegisterRoutes(eng *gin.Engine, svc *service.Service) {
 	besdk.POST(g, "/opportunities", "crm.opportunity.edit", createOpportunityHandler(svc))
 	besdk.GET(g, "/opportunities", "crm.opportunity.view", listOpportunitiesHandler(svc))
 	besdk.GET(g, "/opportunities/:id", "crm.opportunity.view", getOpportunityHandler(svc))
+	besdk.GET(g, "/opportunities/:id/stage-history", "crm.opportunity.view", stageHistoryHandler(svc))
 	besdk.PATCH(g, "/opportunities/:id", "crm.opportunity.edit", updateOpportunityHandler(svc))
 	besdk.POST(g, "/opportunities/:id/stage", "crm.opportunity.edit", changeStageHandler(svc))
 	besdk.POST(g, "/opportunities/:id/win", "crm.opportunity.win", markWonHandler(svc))
@@ -267,5 +268,29 @@ func listStagesHandler(svc *service.Service) gin.HandlerFunc {
 			})
 		}
 		c.JSON(http.StatusOK, gin.H{"stages": dtos})
+	}
+}
+
+// stageHistoryHandler：GET /opportunities/{id}/stage-history。probability 为 null
+// 的行写下时还没有记录概率。
+func stageHistoryHandler(svc *service.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		entries, err := svc.GetStageHistory(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			_ = c.Error(service.ToStatus(err))
+			return
+		}
+		history := make([]gin.H, 0, len(entries))
+		for _, e := range entries {
+			row := gin.H{
+				"from_stage_id": e.FromStageID, "to_stage_id": e.ToStageID, "probability": nil,
+				"changed_by": e.ChangedBy, "changed_at": e.ChangedAt.Format(rfc3339),
+			}
+			if e.Probability != nil {
+				row["probability"] = *e.Probability
+			}
+			history = append(history, row)
+		}
+		c.JSON(http.StatusOK, gin.H{"history": history})
 	}
 }

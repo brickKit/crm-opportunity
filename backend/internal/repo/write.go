@@ -289,8 +289,8 @@ func (r *Repo) ChangeStage(ctx context.Context, in ChangeStageInput) (*Opportuni
 			return nil, fmt.Errorf("更新 opportunities: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO opportunity_stage_history (opportunity_id, from_stage_id, to_stage_id, changed_by)
-			VALUES ($1, $2, $3, $4)`, oppID, locked.StageID, toStageID, in.ChangedBy); err != nil {
+			INSERT INTO opportunity_stage_history (opportunity_id, from_stage_id, to_stage_id, probability, changed_by)
+			VALUES ($1, $2, $3, $4, $5)`, oppID, locked.StageID, toStageID, probability, in.ChangedBy); err != nil {
 			return nil, fmt.Errorf("写 opportunity_stage_history: %w", err)
 		}
 

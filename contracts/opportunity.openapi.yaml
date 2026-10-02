@@ -105,6 +105,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Opportunity" }
 
+  /opportunities/{id}/stage-history:
+    get:
+      summary: 商机的阶段流转历史（按时间先后；建档本身不算一次流转）
+      operationId: listOpportunityStageHistory
+      description: 权限键 crm.opportunity.view。可见性与 GET /opportunities/{id} 相同；看不到的商机与不存在的一样答 404，不泄露哪些 id 存在。不分页：一个商机的子集合。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history:
+                    type: array
+                    items: { $ref: "#/components/schemas/StageHistoryEntry" }
+        "404":
+          description: 商机不存在，或不在调用者的数据范围内
+
   /opportunities/{id}/stage:
     post:
       summary: ChangeStage（阶段推进，写历史）
@@ -235,6 +256,18 @@ components:
         version: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    StageHistoryEntry:
+      type: object
+      properties:
+        from_stage_id: { type: string }
+        to_stage_id: { type: string }
+        probability:
+          type: integer
+          nullable: true
+          description: 这次流转设定的概率（阶段默认值或手工覆盖值）；为 null 的行写下时还没有记录概率
+        changed_by: { type: string, description: 操作人的 sub }
+        changed_at: { type: string, format: date-time }
 
     IdempotentRequest:
       type: object

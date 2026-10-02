@@ -73,6 +73,7 @@ func engineAs(svc *service.Service, claims besdk.Claims) *gin.Engine {
 	g.GET("/opportunities", listOpportunitiesHandler(svc))
 	g.GET("/opportunities/:id", getOpportunityHandler(svc))
 	g.PATCH("/opportunities/:id", updateOpportunityHandler(svc))
+	g.GET("/opportunities/:id/stage-history", stageHistoryHandler(svc))
 	return eng
 }
 
@@ -125,5 +126,46 @@ func TestGetOpportunity_REST响应带order_id(t *testing.T) {
 	v, ok := body["order_id"]
 	if !ok || v != "" {
 		t.Fatalf("期望 order_id 字段存在且为空串，实际 %v（存在=%v）", v, ok)
+	}
+}
+
+// GET /opportunities/{id}/stage-history：响应 {history: [{from_stage_id,
+// to_stage_id, probability, changed_by, changed_at}]}；别人范围里的商机答 404。
+func TestStageHistory_REST形状与范围外404(t *testing.T) {
+	r := testRepo(t)
+	svc := testService(r)
+	owner := "u_" + uniqueSuffix("hist-owner")
+	opp := createOpp(t, r, "/1/12/", owner, "100.00")
+	stages, err := r.ListStages(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ChangeStage(context.Background(), repo.ChangeStageInput{
+		IdempotencyKey: uniqueSuffix("rest-hist"), ID: opp.ID, ToStageID: stages[2].ID, ChangedBy: owner}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := "/crm/opportunity/opportunities/" + opp.ID + "/stage-history"
+	code, body := do(t, engineAs(svc, besdk.Claims{Sub: owner, DeptPath: "/1/12/"}), http.MethodGet, path, "")
+	if code != http.StatusOK {
+		t.Fatalf("期望 200，实际 %d：%v", code, body)
+	}
+	history, _ := body["history"].([]any)
+	if len(history) != 1 {
+		t.Fatalf("期望一条历史，实际 %v", body)
+	}
+	row, _ := history[0].(map[string]any)
+	for _, k := range []string{"from_stage_id", "to_stage_id", "probability", "changed_by", "changed_at"} {
+		if _, ok := row[k]; !ok {
+			t.Fatalf("历史行缺字段 %s：%v", k, row)
+		}
+	}
+	if row["to_stage_id"] != stages[2].ID || row["changed_by"] != owner || row["probability"] != float64(stages[2].DefaultProbability) {
+		t.Fatalf("历史行内容不对：%v", row)
+	}
+
+	other := engineAs(svc, besdk.Claims{Sub: "u_" + uniqueSuffix("other"), DeptPath: "/1/34/"})
+	if code, body := do(t, other, http.MethodGet, path, ""); code != http.StatusNotFound {
+		t.Fatalf("别的部门、不是负责人：期望 404，实际 %d：%v", code, body)
 	}
 }

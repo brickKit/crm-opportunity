@@ -307,6 +307,23 @@ func (s *Service) GetOpportunity(ctx context.Context, id string) (*repo.Opportun
 	return opp, nil
 }
 
+// GetStageHistory 返回一个商机的阶段流转历史。可见性与 GetOpportunity 相同，
+// 但看不到的商机答 ErrNotFound（与不存在一样），不泄露哪些 id 存在。
+func (s *Service) GetStageHistory(ctx context.Context, id string) ([]repo.StageHistoryEntry, error) {
+	if id == "" {
+		return nil, fmt.Errorf("%w: id 不能为空", ErrInvalidArgument)
+	}
+	opp, err := s.repo.GetOpportunity(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	scope := besdk.ScopeOf(ctx)
+	if !opp.InScope(scope.Prefix, scope.Owner) {
+		return nil, fmt.Errorf("%w: opportunity id=%s", repo.ErrNotFound, id)
+	}
+	return s.repo.ListStageHistory(ctx, id)
+}
+
 func (s *Service) ListOpportunities(ctx context.Context, in repo.ListInput) (*repo.ListResult, error) {
 	scope := besdk.ScopeOf(ctx)
 	if in.ViewMine {
