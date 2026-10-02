@@ -49,12 +49,12 @@ The AI guide to developing this component. How to use it, its boundaries and con
 set -a; . ../../../.env; set +a
 export TEST_PG_DSN="postgres://postgres:${POSTGRES_PASSWORD}@localhost:5432/brickkit_test_db?sslmode=disable"
 make test                    # every package ends in "ok"; refuses to run without TEST_PG_DSN
-go test ./... -count=1 -v | grep -- '--- SKIP'   # only the two cross-component tests in backend/internal/service/service_test.go
+go test ./... -count=1 -v | grep -- '--- SKIP'   # only the three cross-component tests in backend/internal/service/ (service_test.go, nodept_test.go)
 make check-version dag-check contract-check import-scan module-check   # each prints one ✓ line
 make docs-check              # "0 with errors, 0 warnings"
 ```
 
-The two skipped tests need `mdm/customer` and `mdm/product` running; from the project root, `make test-cross ID=crm/opportunity` points them at the running containers, and there they must pass. Migrations: `make test-db-init ID=crm/opportunity` at the project root runs them twice as `crm_opportunity_rw` (`✓ 迁移幂等`). After `buf generate` (contracts changed), the contract package needs a new tag: see Pitfalls. On a real machine, from the project root: `make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` builds the image, starts only what this component needs, checks migration, health and the permission check, runs a focus run, and tears down.
+The three skipped tests need `mdm/customer` and `mdm/product` running; from the project root, `make test-cross ID=crm/opportunity` points them at the running containers, and there they must pass. Migrations: `make test-db-init ID=crm/opportunity` at the project root runs them twice as `crm_opportunity_rw` (`✓ 迁移幂等`). After `buf generate` (contracts changed), the contract package needs a new tag: see Pitfalls. On a real machine, from the project root: `make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` builds the image, starts only what this component needs, checks migration, health and the permission check, runs a focus run, and tears down.
 
 ## Design decisions
 
@@ -63,7 +63,8 @@ The two skipped tests need `mdm/customer` and `mdm/product` running; from the pr
 - **Every write is idempotent and commits together with its event** (`runCommand`): a committed change always publishes, a rolled-back one never does.
 - **Numbers are validated with regular expressions, not by the database:** `NUMERIC` stores `NaN` and rounds extra decimals silently.
 - **The weighted amount is computed, never stored**; all money arithmetic is decimal.
-- **Two data-scope dimensions, `org` and `owner`, the same as `erp/sales`.** Lists and the funnel switch between them with `view`; single reads accept either.
+- **Two data-scope dimensions, `org` and `owner`, the same as `erp/sales`.** Lists and the funnel switch between them with `view`; single reads accept either and answer `404` outside both, writes answer `403`.
+- **A caller without a department matches no `org` row.** The SDK's prefix for an empty `dept_path` matches nothing; such a caller still creates opportunities, with an empty department snapshot, visible only to the owner.
 - **`order_id` is written once.** A second order claiming the same opportunity is logged at `ERROR`, not applied.
 
 ## Pitfalls
@@ -73,6 +74,7 @@ The two skipped tests need `mdm/customer` and `mdm/product` running; from the pr
 | Add `erp/sales` (or any `erp/*`, `infra/workflow`) to `dependencies.components`, or call it from `MarkWon` | Winning fails when stock is short although the deal was won; a CRM-only project cannot be assembled | Only events cross between CRM and ERP; `make dag-check` fails on such an edge |
 | Validate an amount with `strconv.ParseFloat`, or pass it to SQL unchecked | `NaN` is stored and the funnel sums turn into `NaN`; `1e3` and `100.005` are accepted silently; `abc` answers `500` | Use the validators in `backend/internal/repo/decimal.go`; `backend/internal/repo/validate_test.go` lists the cases |
 | Combine `owner_id = me OR dept_path LIKE …` on the list or the funnel | `view=mine` shows the whole department's figures | The two views are a switch chosen by `view`; `backend/internal/service/funnel_test.go` checks two users in two departments |
+| Treat an empty `dept_path` or `ScopePrefix` as the root of the tree, or write `scope.Prefix` into a row without checking `HasDept` | A new account with only `crm.opportunity.view` sees and wins every opportunity; or rows carry the SDK's no-department marker as if it were a department | An empty path means "no department", not "everything"; the root is `/<root id>/` or `"/"`. `creatorSnapshot` writes an empty department when `HasDept` is false; `backend/internal/service/nodept_test.go` checks each route |
 | Overwrite a non-empty `order_id` in the consumer | The first order silently loses its link to the opportunity | One opportunity converts once; a conflict is a data problem for a person |
 | Drop `owner_id` or `dept_path` from the won event | `erp/sales` creates the order, but nobody's list shows it | The order inherits the opportunity's ownership from the event; there is no user token in that handler |
 | Call `mdm/customer` / `mdm/product` inside the repo transaction | Under a slow dependency, row locks are held for seconds and other writes queue | The service calls them first; the repo never makes network calls |

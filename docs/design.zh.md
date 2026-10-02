@@ -66,7 +66,7 @@ REST 在 `/crm/opportunity` 下：
 
 赢单有自己的权限键：它会触发建单、库存预留和应收，是这里唯一在下游有财务后果的动作。`BatchGetOpportunities` 只在 gRPC 上。
 
-**REST 的错误**按 SDK 的 gRPC → HTTP 映射：参数不合法（含列表的 `created_after` / `created_before` 格式不对）与对终态商机做操作 → `400`；`GET /opportunities/{id}` 与各写路由上，商机不在调用者的数据范围内 → `403`；不存在 → `404`；`PATCH` 的 `version` 过期 → `409`（`ABORTED`，OpenAPI 契约里有声明）；主数据调用超时 → `504`。调用方能自己纠正的错误记 `INFO`，超时与依赖不可用记 `WARN`，只有内部错误记 `ERROR`。
+**REST 的错误**按 SDK 的 gRPC → HTTP 映射：参数不合法（含列表的 `created_after` / `created_before` 格式不对）与对终态商机做操作 → `400`；各写路由上，商机不在调用者的数据范围内 → `403`；不存在，或 `GET /opportunities/{id}` 与 `stage-history` 上商机不在调用者的数据范围内 → `404`；`PATCH` 的 `version` 过期 → `409`（`ABORTED`，OpenAPI 契约里有声明）；主数据调用超时 → `504`。调用方能自己纠正的错误记 `INFO`，超时与依赖不可用记 `WARN`，只有内部错误记 `ERROR`。
 
 **阶段历史**（`GET /opportunities/{id}/stage-history`）：一个商机的每次阶段流转，按时间先后，`{from_stage_id, to_stage_id, probability, changed_by, changed_at}`。不在调用者数据范围内的商机答 `404`，和不存在完全一样，这条路由不泄露哪些 ID 存在。不分页：它是一个商机的子集合，长度受一单生意换阶段的次数限制。建档本身不算一行历史（没有"从哪来"）。
 
@@ -136,10 +136,14 @@ REST 在 `/crm/opportunity` 下：
 | 路由 | 范围怎么生效 |
 |---|---|
 | `GET /opportunities`、`GET /opportunities/funnel` | `view=mine` → `owner_id` = 调用者的 `sub`；否则 `dept_path` 以调用者的 `dept_path` 开头。是切换：一次只用一个操作数，两个都来自调用者的 token |
-| `GET /opportunities/{id}` 与各写路由 | `dept_path` 以调用者的 `dept_path` 开头，**或** `owner_id` 是调用者，即可见：两个操作数都来自调用者的 token；范围外 → `403` |
-| `GET /opportunities/{id}/stage-history` | 与单条读取的可见性相同；范围外 → `404` |
+| `GET /opportunities/{id}`、`GET /opportunities/{id}/stage-history` | `dept_path` 以调用者的 `dept_path` 开头，**或** `owner_id` 是调用者，即可见：两个操作数都来自调用者的 token；范围外 → `404`，与不存在的 ID 完全一样 |
+| 各写路由（`PATCH`、`stage`、`win`、`lose`） | 与单条读取的可见性相同；范围外 → `403`：要写的人本来就拿着这个 ID |
 
-`dept_path` 为空的调用者位于部门树的根，看得到所有部门，这是项目对空前缀的定义。
+**没有部门的调用者。** 真实的部门路径恒为 `/<id>/…/`，根部门也是 `/<根id>/`。token 里 `dept_path` 为空只有一种含义：这个人还没被分到任何部门。SDK（be-sdk-go v0.5.0）这时给出一个什么都不匹配的前缀（`besdk.NoDeptPath`）和 `HasDept = false`，于是 `org` 维不命中任何行：列表的部门视图为空，部门漏斗为零，单条读取与写命令只剩"我是负责人"这一个理由。要看全公司，就分到根部门；`"/"` 是覆盖所有部门树的显式标记，作为普通前缀匹配每一条有部门的商机。
+
+这样的人仍然可以建商机。归属快照这时把 `dept_id` 与 `dept_path` 写成空串，绝不写 SDK 的那个标记：`dept_path` 为空的行不属于任何部门，只有负责人看得到，`"/"` 与根部门都不命中它。赢单事件带着这个空的 `dept_path`，由它转出的订单同样只有负责人看得到。
+
+仓储层也不把这件事交给调用方：`InScope` 收到空前缀时部门一侧不命中，列表或漏斗的部门视角收到空前缀是 `InvalidArgument`，不是"不限"。空前缀只可能是调用方漏填了。
 
 ## 参考实现
 
@@ -158,7 +162,7 @@ REST 在 `/crm/opportunity` 下：
 | 问题 | 当前答案 |
 |---|---|
 | `order_id` 从 `sales.order.created.v1` 回填，而 `erp/sales` 在订单确认时才发它：停在草稿的订单（例如超出信用额度）让 `order_id` 一直为空 | 暂时接受："已转化"意味着"存在一张已确认的订单"。如果界面也要看草稿订单，由 `erp/sales` 增加一个草稿已建的事件，本消费者再订阅它 |
-| `GET /opportunities/{id}` 在数据范围外答 `403`，`stage-history` 答 `404` | `404` 是更好的答案（不泄露这个 ID 存在）；改单条读取对已有调用方是行为变更，留待专门决定 |
+| 没有部门的人建的商机，在他被分到部门之后 `dept_path` 仍是空串 | 接受：部门是建档时的快照，没有任何记录说明这一行"本该"属于哪个部门。要紧的话由人手工改负责人（`PATCH`）；部门列仍是快照 |
 | gRPC 服务端没有 token 验签：需要调用者数据范围的读写经 gRPC 会失败，`BatchGetOpportunities` 不加任何范围 | SDK 还没有 gRPC 认证拦截器；面向用户的是 REST。在 SDK 里补，不在这里补 |
 | 还没有归档终态商机的任务 | 上面的规则不变；任务随项目的归档工作一起来 |
 | 漏斗转化率与预测 | 这里只有各阶段的合计。转化分析归分析类组件，由 `crm.opportunity.stage_changed.v1` 喂数据，不归业务组件 |

@@ -66,7 +66,7 @@ REST under `/crm/opportunity`:
 
 Winning has its own key: it starts order creation, stock reservation and receivables, the only action here with financial consequences downstream. `BatchGetOpportunities` is gRPC only.
 
-**Errors on REST** follow the SDK's gRPC → HTTP table: invalid input (including a malformed `created_after` / `created_before` on the list) and an action on a terminal opportunity → `400`; an opportunity outside the caller's data scope on `GET /opportunities/{id}` and the write routes → `403`; not found → `404`; stale `version` on `PATCH` → `409` (`ABORTED`, declared in the OpenAPI contract); a master-data call that timed out → `504`. Errors the caller can correct are logged at `INFO`, timeouts and unavailable dependencies at `WARN`, only internal errors at `ERROR`.
+**Errors on REST** follow the SDK's gRPC → HTTP table: invalid input (including a malformed `created_after` / `created_before` on the list) and an action on a terminal opportunity → `400`; an opportunity outside the caller's data scope on the write routes → `403`; not found, or outside the caller's data scope on `GET /opportunities/{id}` and `stage-history` → `404`; stale `version` on `PATCH` → `409` (`ABORTED`, declared in the OpenAPI contract); a master-data call that timed out → `504`. Errors the caller can correct are logged at `INFO`, timeouts and unavailable dependencies at `WARN`, only internal errors at `ERROR`.
 
 **Stage history** (`GET /opportunities/{id}/stage-history`): every stage change of one opportunity, oldest first, `{from_stage_id, to_stage_id, probability, changed_by, changed_at}`. An opportunity outside the caller's data scope answers `404`, exactly like one that does not exist, so the route does not reveal which IDs exist. Not paged: it is a child collection of one opportunity, bounded by how often one deal changes stage. The creation itself is not a history row (there is no "from").
 
@@ -136,10 +136,14 @@ Two dimensions on `opportunities`: `org` (`dept_path` prefix) and `owner` (`owne
 | Route | How the scope applies |
 |---|---|
 | `GET /opportunities`, `GET /opportunities/funnel` | `view=mine` → `owner_id` = the caller's `sub`; otherwise `dept_path` starts with the caller's `dept_path`. A switch: one operand at a time, both from the caller's token |
-| `GET /opportunities/{id}` and the write routes | visible when `dept_path` starts with the caller's `dept_path` **or** `owner_id` is the caller: both operands come from the caller's token; outside → `403` |
-| `GET /opportunities/{id}/stage-history` | the same visibility as the single read; outside → `404` |
+| `GET /opportunities/{id}`, `GET /opportunities/{id}/stage-history` | visible when `dept_path` starts with the caller's `dept_path` **or** `owner_id` is the caller: both operands come from the caller's token; outside → `404`, exactly like an ID that does not exist |
+| the write routes (`PATCH`, `stage`, `win`, `lose`) | the same visibility as the single read; outside → `403`: whoever writes already holds the ID |
 
-A caller whose `dept_path` is empty sits at the root of the tree and sees every department, by the project's definition of the empty prefix.
+**A caller without a department.** A real department path is always `/<id>/…/`; the root department is `/<root id>/` too. An empty `dept_path` in the token means only one thing: this person has not been placed in any department yet. The SDK (be-sdk-go v0.5.0) then gives a prefix that matches nothing (`besdk.NoDeptPath`) and `HasDept = false`, so the `org` dimension matches no row: the department view of the list is empty, the department funnel is zero, and single reads and writes are left with "I am the owner". Seeing the whole organisation means sitting in its root department; `"/"` is the explicit marker for every tree and, as an ordinary prefix, matches every opportunity that has a department.
+
+Such a person may still create opportunities. The ownership snapshot then writes an empty `dept_id` and `dept_path`, never the SDK's marker: a row with an empty `dept_path` belongs to no department, so only its owner sees it, and neither `"/"` nor the root department matches it. The won event carries that empty `dept_path`, and the order made from it is likewise visible only to its owner.
+
+The repository does not trust its callers with this either: an empty prefix in `InScope` matches no department, and the department view of the list or the funnel with an empty prefix is an `InvalidArgument`, not "no limit". An empty prefix can only mean the caller forgot to fill it in.
 
 ## Reference implementations
 
@@ -158,7 +162,7 @@ Two real differences between products, both decided as customer forks rather tha
 | Question | Current answer |
 |---|---|
 | `order_id` is backfilled from `sales.order.created.v1`, which `erp/sales` publishes when the order is confirmed: an order stuck in draft (for example over the credit limit) leaves `order_id` empty | Accepted for now: "converted" means "a confirmed order exists". If screens need draft orders too, `erp/sales` adds an event for created drafts and this consumer subscribes to it as well |
-| `GET /opportunities/{id}` answers `403` outside the data scope, `stage-history` answers `404` | `404` is the better answer (it does not reveal that the ID exists); changing the single read is a behaviour change for existing callers, left for a deliberate decision |
+| An opportunity created by someone without a department keeps an empty `dept_path` after they are placed in one | Accepted: the department is a snapshot taken at creation, and nothing records which department the row "should" have had. If it matters, a person changes its owner by hand (`PATCH`); the department column stays a snapshot |
 | The gRPC server has no token verification: reads and writes that need the caller's data scope fail over gRPC, and `BatchGetOpportunities` applies no scope | The SDK has no gRPC authentication interceptor yet; REST is the user-facing surface. To be closed in the SDK, not here |
 | No job archives terminal opportunities yet | The rule above stands; the job comes with the project's archiving work |
 | Funnel conversion rates and forecasts | Only the per-stage sums live here. Conversion analysis belongs to an analytics component fed by `crm.opportunity.stage_changed.v1`, not to the business component |

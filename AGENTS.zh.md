@@ -49,12 +49,12 @@
 set -a; . ../../../.env; set +a
 export TEST_PG_DSN="postgres://postgres:${POSTGRES_PASSWORD}@localhost:5432/brickkit_test_db?sslmode=disable"
 make test                    # 每个包都以 "ok" 结尾；没设 TEST_PG_DSN 时拒绝运行
-go test ./... -count=1 -v | grep -- '--- SKIP'   # 只有 backend/internal/service/service_test.go 里的两条跨组件测试
+go test ./... -count=1 -v | grep -- '--- SKIP'   # 只有 backend/internal/service/ 里的三条跨组件测试（service_test.go、nodept_test.go）
 make check-version dag-check contract-check import-scan module-check   # 各打印一行 ✓
 make docs-check              # "0 with errors, 0 warnings"
 ```
 
-两条跳过的测试要 `mdm/customer` 与 `mdm/product` 在跑；在项目根 `make test-cross ID=crm/opportunity` 把它们指到正在跑的容器上，在那里必须通过。迁移：项目根 `make test-db-init ID=crm/opportunity` 以 `crm_opportunity_rw` 连跑两次（`✓ 迁移幂等`）。`buf generate` 之后（契约变了）契约包要打新 tag：见易错点。真机上，在项目根：`make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` 构建镜像、只起本组件需要的东西、核对迁移、健康检查与权限判定、跑一次 focus，最后拆掉。
+三条跳过的测试要 `mdm/customer` 与 `mdm/product` 在跑；在项目根 `make test-cross ID=crm/opportunity` 把它们指到正在跑的容器上，在那里必须通过。迁移：项目根 `make test-db-init ID=crm/opportunity` 以 `crm_opportunity_rw` 连跑两次（`✓ 迁移幂等`）。`buf generate` 之后（契约变了）契约包要打新 tag：见易错点。真机上，在项目根：`make verify ID=crm/opportunity ROUTE=/crm/opportunity/opportunities FOCUS=1` 构建镜像、只起本组件需要的东西、核对迁移、健康检查与权限判定、跑一次 focus，最后拆掉。
 
 ## 设计取舍
 
@@ -63,7 +63,8 @@ make docs-check              # "0 with errors, 0 warnings"
 - **每个写命令都幂等，并与它的事件一起提交**（`runCommand`）：提交了的变更一定发事件，回滚了的一定不发。
 - **数字用正则校验，不靠数据库：** `NUMERIC` 会存下 `NaN`，多出的小数位会被悄悄四舍五入。
 - **加权金额现算、从不落库**；所有金额运算都按十进制。
-- **两个数据范围维度 `org` 与 `owner`，与 `erp/sales` 相同。** 列表与漏斗用 `view` 在两者之间切换；单条读取两者满足其一即可。
+- **两个数据范围维度 `org` 与 `owner`，与 `erp/sales` 相同。** 列表与漏斗用 `view` 在两者之间切换；单条读取两者满足其一即可，都不满足答 `404`，写命令答 `403`。
+- **没有部门的调用者不命中任何 `org` 行。** SDK 给空 `dept_path` 的前缀什么都不匹配；这样的人照样能建商机，部门快照为空，只有负责人看得到。
 - **`order_id` 只写一次。** 第二张订单声称来自同一个商机时记 `ERROR`，不生效。
 
 ## 易错点
@@ -73,6 +74,7 @@ make docs-check              # "0 with errors, 0 warnings"
 | 把 `erp/sales`（或任何 `erp/*`、`infra/workflow`）加进 `dependencies.components`，或在 `MarkWon` 里调它 | 生意确实赢了，赢单却因为库存不足失败；只装 CRM 的项目装不起来 | CRM 与 ERP 之间只走事件；`make dag-check` 遇到这种边就失败 |
 | 用 `strconv.ParseFloat` 校验金额，或不校验直接交给 SQL | `NaN` 被存下，漏斗合计变成 `NaN`；`1e3`、`100.005` 被悄悄接受；`abc` 答 `500` | 用 `backend/internal/repo/decimal.go` 里的校验函数；`backend/internal/repo/validate_test.go` 列出了这些写法 |
 | 在列表或漏斗上写 `owner_id = 我 OR dept_path LIKE …` | `view=mine` 显示的是整个部门的数 | 两种视角由 `view` 切换；`backend/internal/service/funnel_test.go` 用两个部门的两个用户核对 |
+| 把空的 `dept_path` 或 `ScopePrefix` 当成部门树的根，或不看 `HasDept` 就把 `scope.Prefix` 写进行里 | 只被授了 `crm.opportunity.view` 的新账号看得到、赢得了每一个商机；或者行里带着 SDK 的"无部门"标记，像是一个部门 | 空路径的意思是"没有部门"，不是"全部"；根是 `/<根id>/` 或 `"/"`。`creatorSnapshot` 在 `HasDept` 为假时把部门写成空串；`backend/internal/service/nodept_test.go` 逐条路由核对 |
 | 在消费者里覆盖非空的 `order_id` | 第一张订单悄悄和商机断了联系 | 一个商机只转一次单；冲突是要人去看的数据问题 |
 | 从赢单事件里去掉 `owner_id` 或 `dept_path` | `erp/sales` 照样建出订单，但谁的列表里都看不到 | 订单从事件里继承商机的归属；那个 handler 里没有用户 token |
 | 在 repo 的事务里调 `mdm/customer` / `mdm/product` | 依赖一慢，行锁就被占上几秒，别的写入排队 | service 先调它们；repo 从不发网络调用 |
