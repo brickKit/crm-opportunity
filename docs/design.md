@@ -45,11 +45,13 @@ gRPC `crm.opportunity.v1.OpportunityService`, for other components:
 | `ChangeStage` | write | idempotent; any stage to any stage, history row written |
 | `MarkWon` | write | idempotent; sets `WON`, probability 100, `won_at`, and writes `crm.opportunity.won.v1` in the same transaction |
 | `MarkLost` | write | idempotent; reason required |
-| `GetOpportunity`, `ListOpportunities` | read | `List` pages by cursor; default window the last 90 days |
+| `GetOpportunity`, `ListOpportunities` | read | `List` pages by cursor; `created_after` / `created_before` give the creation-time window, default the last 90 days |
 | `BatchGetOpportunities` | read | the batched read callers use instead of a loop of `Get`; missing IDs in `missing_ids` |
 | `ListStages` | read | the stage definitions |
 
 `Opportunity` carries `order_id` (empty until backfilled).
+
+**Numeric input is validated with regular expressions before anything is written or any dependency is called**: `expected_amount` and `quoted_unit_price` are non-negative plain decimals with at most 16 integer digits and 2 decimals (`NUMERIC(18,2)`); `qty` is a positive plain decimal with at most 12 integer digits and 6 decimals (`NUMERIC(18,6)`); a probability override is 0–100. Anything else, `NaN`, `Inf`, `1e3`, `-1`, `.5`, `100.005` included, is `InvalidArgument` (`400`). The database cannot be the check: PostgreSQL's `NUMERIC` stores `'NaN'` (which sorts above every number, so `CHECK`s pass and the funnel sums turn into `NaN`), accepts exponents, rounds extra decimals silently, and reports overflow or a violated `CHECK` as a server error (`500`). `strconv.ParseFloat` accepts `NaN`, `Inf` and exponents too.
 
 REST under `/crm/opportunity`:
 
@@ -64,7 +66,7 @@ REST under `/crm/opportunity`:
 
 Winning has its own key: it starts order creation, stock reservation and receivables, the only action here with financial consequences downstream. `BatchGetOpportunities` is gRPC only.
 
-**Errors on REST** follow the SDK's gRPC → HTTP table: invalid input and an action on a terminal opportunity → `400`; an opportunity outside the caller's data scope on `GET /opportunities/{id}` and the write routes → `403`; not found → `404`; stale `version` on `PATCH` → `409`; a master-data call that timed out → `504`.
+**Errors on REST** follow the SDK's gRPC → HTTP table: invalid input (including a malformed `created_after` / `created_before` on the list) and an action on a terminal opportunity → `400`; an opportunity outside the caller's data scope on `GET /opportunities/{id}` and the write routes → `403`; not found → `404`; stale `version` on `PATCH` → `409` (`ABORTED`, declared in the OpenAPI contract); a master-data call that timed out → `504`. Errors the caller can correct are logged at `INFO`, timeouts and unavailable dependencies at `WARN`, only internal errors at `ERROR`.
 
 **Stage history** (`GET /opportunities/{id}/stage-history`): every stage change of one opportunity, oldest first, `{from_stage_id, to_stage_id, probability, changed_by, changed_at}`. An opportunity outside the caller's data scope answers `404`, exactly like one that does not exist, so the route does not reveal which IDs exist. Not paged: it is a child collection of one opportunity, bounded by how often one deal changes stage. The creation itself is not a history row (there is no "from").
 
