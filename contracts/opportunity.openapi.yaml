@@ -102,6 +102,7 @@ paths:
     get:
       summary: GetOpportunity
       operationId: getOpportunity
+      description: 权限键 crm.opportunity.view。看得到的是本部门及下级的商机，或本人负责的商机；看不到的商机与不存在的一样答 404，不泄露哪些 id 存在。
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
@@ -110,6 +111,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Opportunity" }
+        "404":
+          description: 商机不存在，或不在调用者的数据范围内
     patch:
       summary: UpdateOpportunity（改金额/预计成交日/负责人）
       operationId: updateOpportunity

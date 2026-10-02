@@ -175,12 +175,12 @@ func createOpportunityWithScope(t *testing.T, ctx context.Context, r *repo.Repo,
 	return opp
 }
 
-// TestGetOpportunity_范围外ErrForbidden 是数据权限边界测试：`e2eTestCtx()` 的 Claims 是
-// Sub=u_e2e_test_owner、DeptPath=/1/12/，建一条部门(/9/99/)和 owner
+// TestGetOpportunity_范围外与不存在一样是NotFound 是数据权限边界测试：`e2eTestCtx()`
+// 的 Claims 是 Sub=u_e2e_test_owner、DeptPath=/1/12/，建一条部门(/9/99/)和 owner
 // (u_someone_else) 都不命中的商机——org 前缀不匹配、owner 也不匹配，
-// InScope 两个条件都落空，必须拿到 repo.ErrForbidden，不能"多返回了
-// 几行不该看到的数据"。
-func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
+// InScope 两个条件都落空，必须拿到 repo.ErrNotFound（与不存在的 id 答得一样，
+// 不泄露这个 id 存在），不能把商机返回出去。
+func TestGetOpportunity_范围外与不存在一样是NotFound(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
@@ -189,8 +189,11 @@ func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_someone_else")
 
 	_, err := svc.GetOpportunity(ctx, opp.ID)
-	if !errors.Is(err, repo.ErrForbidden) {
-		t.Fatalf("部门与 owner 都不在范围内，期望 repo.ErrForbidden，实际 %v", err)
+	if !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("部门与 owner 都不在范围内，期望 repo.ErrNotFound，实际 %v", err)
+	}
+	if _, err := svc.GetOpportunity(ctx, "999999999999"); !errors.Is(err, repo.ErrNotFound) {
+		t.Fatalf("不存在的商机：期望 repo.ErrNotFound，实际 %v", err)
 	}
 }
 

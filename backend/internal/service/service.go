@@ -310,15 +310,17 @@ func (s *Service) GetOpportunity(ctx context.Context, id string) (*repo.Opportun
 	if err != nil {
 		return nil, err
 	}
+	// 看不到的商机与不存在的答得一样（ErrNotFound），不泄露哪些 id 存在。写命令
+	// 仍答 ErrForbidden（checkOpportunityInScope）：要改它的人本来就拿着这个 id。
 	scope := besdk.ScopeOf(ctx)
 	if !opp.InScope(scope.Prefix, scope.Owner) {
-		return nil, repo.ErrForbidden
+		return nil, fmt.Errorf("%w: opportunity id=%s", repo.ErrNotFound, id)
 	}
 	return opp, nil
 }
 
-// GetStageHistory 返回一个商机的阶段流转历史。可见性与 GetOpportunity 相同，
-// 但看不到的商机答 ErrNotFound（与不存在一样），不泄露哪些 id 存在。
+// GetStageHistory 返回一个商机的阶段流转历史。可见性与 GetOpportunity 相同：
+// 看不到的商机答 ErrNotFound（与不存在一样）。
 func (s *Service) GetStageHistory(ctx context.Context, id string) ([]repo.StageHistoryEntry, error) {
 	if id == "" {
 		return nil, fmt.Errorf("%w: id 不能为空", ErrInvalidArgument)
