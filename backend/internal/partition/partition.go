@@ -29,7 +29,7 @@ var weeklyPartitionedTables = []string{"event_outbox", "event_inbox"}
 // Start 立刻检查一次，之后每 24 小时检查一次。单次检查失败只记日志，
 // 不让整个循环退出（§13.3 铁律七）。
 func Start(ctx context.Context, db *sql.DB, role, schema string, logger *slog.Logger) error {
-	if err := ensureAllWeekly(ctx, db, role, schema); err != nil {
+	if err := ensureAllWeekly(ctx, db, role, schema); err != nil && ctx.Err() == nil {
 		logger.Error("周分区维护失败", "error", err)
 	}
 
@@ -40,7 +40,7 @@ func Start(ctx context.Context, db *sql.DB, role, schema string, logger *slog.Lo
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := ensureAllWeekly(ctx, db, role, schema); err != nil {
+			if err := ensureAllWeekly(ctx, db, role, schema); err != nil && ctx.Err() == nil {
 				logger.Error("周分区维护失败", "error", err)
 			}
 		}

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	besdk "github.com/brickKit/be-sdk-go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
@@ -32,6 +34,21 @@ type Service struct {
 
 func New(r *repo.Repo, deps *client.Deps, logger *slog.Logger) *Service {
 	return &Service{repo: r, deps: deps, logger: logger}
+}
+
+// logFailure 按错误的性质选日志级别。调用方自己能纠正的错误（参数、找不到、
+// 范围外、版本过期、终态）和下游超时 / 不可用不记 ERROR：访问日志与 RED 指标
+// 已经记下状态码，ERROR 只留给映射成 Internal / Unknown、需要运维处理的错误。
+func (s *Service) logFailure(msg string, err error, attrs ...any) {
+	attrs = append(attrs, "error", err)
+	switch status.Code(ToStatus(err)) {
+	case codes.Internal, codes.Unknown:
+		s.logger.Error(msg, attrs...)
+	case codes.DeadlineExceeded, codes.Unavailable, codes.Canceled:
+		s.logger.Warn(msg, attrs...)
+	default:
+		s.logger.Info(msg, attrs...)
+	}
 }
 
 // checkOpportunityInScope 是 UpdateOpportunity/ChangeStage/MarkWon/
@@ -186,7 +203,7 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		DeptID: leafDeptID(scope.Prefix), DeptPath: scope.Prefix, OwnerID: scope.Owner,
 	})
 	if err != nil {
-		s.logger.Error("建商机失败", "customer_id", in.CustomerID, "error", err)
+		s.logFailure("建商机失败", err, "customer_id", in.CustomerID)
 		return nil, err
 	}
 	return opp, nil
@@ -204,7 +221,7 @@ func (s *Service) UpdateOpportunity(ctx context.Context, in repo.UpdateOpportuni
 	}
 	opp, err := s.repo.UpdateOpportunity(ctx, in)
 	if err != nil {
-		s.logger.Error("更新商机失败", "opportunity_id", in.ID, "error", err)
+		s.logFailure("更新商机失败", err, "opportunity_id", in.ID)
 		return nil, err
 	}
 	return opp, nil
@@ -228,7 +245,7 @@ func (s *Service) ChangeStage(ctx context.Context, in repo.ChangeStageInput) (*r
 	in.ChangedBy = besdk.ScopeOf(ctx).Owner
 	opp, err := s.repo.ChangeStage(ctx, in)
 	if err != nil {
-		s.logger.Error("商机阶段推进失败", "opportunity_id", in.ID, "error", err)
+		s.logFailure("商机阶段推进失败", err, "opportunity_id", in.ID)
 		return nil, err
 	}
 	return opp, nil
@@ -246,7 +263,7 @@ func (s *Service) MarkWon(ctx context.Context, id, idempotencyKey string) (*repo
 	}
 	opp, err := s.repo.MarkWon(ctx, repo.MarkWonInput{IdempotencyKey: idempotencyKey, ID: id})
 	if err != nil {
-		s.logger.Error("商机赢单失败", "opportunity_id", id, "error", err)
+		s.logFailure("商机赢单失败", err, "opportunity_id", id)
 		return nil, err
 	}
 	return opp, nil
@@ -267,7 +284,7 @@ func (s *Service) MarkLost(ctx context.Context, id, idempotencyKey, reason strin
 	}
 	opp, err := s.repo.MarkLost(ctx, repo.MarkLostInput{IdempotencyKey: idempotencyKey, ID: id, Reason: reason})
 	if err != nil {
-		s.logger.Error("商机输单失败", "opportunity_id", id, "error", err)
+		s.logFailure("商机输单失败", err, "opportunity_id", id)
 		return nil, err
 	}
 	return opp, nil
