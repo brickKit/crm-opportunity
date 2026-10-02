@@ -1,0 +1,129 @@
+package http
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"go.opentelemetry.io/otel/trace/noop"
+
+	besdk "github.com/brickKit/be-sdk-go"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/service"
+)
+
+// REST 层测试：用 besdk.NewGinEngine 造真实的 engine（错误到状态码的映射、
+// panic 恢复都在），handler 挂在一个把 Claims 塞进 ctx 的测试中间件后面——
+// 验签与权限键判定是 SDK 的事，由 SDK 自己的测试守；这里测的是参数、
+// 数据范围、响应形状和状态码。
+
+func testRuntime() *besdk.Runtime {
+	return &besdk.Runtime{
+		Registry: besdk.NewRegistry(),
+		Logger:   slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
+		Tracer:   noop.NewTracerProvider().Tracer("test"),
+	}
+}
+
+func testRepo(t *testing.T) *repo.Repo {
+	t.Helper()
+	dsn := os.Getenv("TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("未设置 TEST_PG_DSN")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+}
+
+func testService(r *repo.Repo) *service.Service {
+	return service.New(r, client.New(besdk.NewConfig(nil), client.DefaultTimeout), slog.Default())
+}
+
+var seq int64
+
+func uniqueSuffix(prefix string) string {
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UnixNano(), atomic.AddInt64(&seq, 1))
+}
+
+// engineAs 返回一个以 claims 身份访问的 engine，路由与生产相同、只是跳过验签。
+func engineAs(svc *service.Service, claims besdk.Claims) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	eng := besdk.NewGinEngine(testRuntime())
+	asCaller := func(c *gin.Context) {
+		c.Request = c.Request.WithContext(besdk.ContextWithClaims(c.Request.Context(), claims))
+		c.Next()
+	}
+	g := eng.Group("/crm/opportunity", asCaller)
+	g.GET("/opportunities", listOpportunitiesHandler(svc))
+	g.GET("/opportunities/:id", getOpportunityHandler(svc))
+	g.PATCH("/opportunities/:id", updateOpportunityHandler(svc))
+	return eng
+}
+
+func do(t *testing.T, eng *gin.Engine, method, path, body string) (int, map[string]any) {
+	t.Helper()
+	var req *http.Request
+	if body == "" {
+		req = httptest.NewRequest(method, path, nil)
+	} else {
+		req = httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, req)
+	var out map[string]any
+	if w.Body.Len() > 0 {
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("响应不是合法 JSON：%v（%s）", err, w.Body.String())
+		}
+	}
+	return w.Code, out
+}
+
+func createOpp(t *testing.T, r *repo.Repo, deptPath, ownerID, amount string) *repo.Opportunity {
+	t.Helper()
+	opp, err := r.CreateOpportunity(context.Background(), repo.CreateOpportunityInput{
+		IdempotencyKey: uniqueSuffix("http-create"), Name: "REST 测试商机", CustomerID: uniqueSuffix("C"),
+		CustomerName: "REST 测试客户", ExpectedAmount: amount,
+		Items: []repo.CreateOpportunityItemInput{{ProductID: uniqueSuffix("P"), Qty: "1", QuotedUnitPrice: amount}},
+		DeptID: "1", DeptPath: deptPath, OwnerID: ownerID,
+	})
+	if err != nil {
+		t.Fatalf("建测试商机失败: %v", err)
+	}
+	return opp
+}
+
+// GET /opportunities/{id} 的响应带 order_id：没有订单时是空串（字段在，前端
+// 不用区分"缺字段"和"空"）。
+func TestGetOpportunity_REST响应带order_id(t *testing.T) {
+	r := testRepo(t)
+	owner := "u_" + uniqueSuffix("rest-owner")
+	opp := createOpp(t, r, "/1/12/", owner, "100.00")
+	eng := engineAs(testService(r), besdk.Claims{Sub: owner, DeptPath: "/1/12/"})
+
+	code, body := do(t, eng, http.MethodGet, "/crm/opportunity/opportunities/"+opp.ID, "")
+	if code != http.StatusOK {
+		t.Fatalf("期望 200，实际 %d：%v", code, body)
+	}
+	v, ok := body["order_id"]
+	if !ok || v != "" {
+		t.Fatalf("期望 order_id 字段存在且为空串，实际 %v（存在=%v）", v, ok)
+	}
+}

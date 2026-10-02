@@ -229,6 +229,9 @@ components:
         currency: { type: string }
         lost_reason: { type: string }
         won_at: { type: string, format: date-time }
+        order_id:
+          type: string
+          description: "赢单转出的订单 id：消费 erp/sales 的 sales.order.created.v1 回填，还没有订单时为空串。订单状态归 erp/sales"
         version: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }

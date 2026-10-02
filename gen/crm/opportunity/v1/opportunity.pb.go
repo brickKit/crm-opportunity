@@ -195,8 +195,12 @@ type Opportunity struct {
 	Version           int64                  `protobuf:"varint,19,opt,name=version,proto3" json:"version,omitempty"`
 	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// 赢单转出的订单 id：消费 erp/sales 的 sales.order.created.v1（payload 的
+	// source_opportunity_id 等于本商机）回填；还没有订单时为空串。只是一个 id，
+	// 订单的状态归 erp/sales。
+	OrderId       string `protobuf:"bytes,22,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Opportunity) Reset() {
@@ -374,6 +378,13 @@ func (x *Opportunity) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Opportunity) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
 }
 
 type OpportunityStage struct {
@@ -1498,7 +1509,7 @@ const file_crm_opportunity_v1_opportunity_proto_rawDesc = "" +
 	"\x06uom_id\x18\x04 \x01(\tR\x05uomId\x12\x10\n" +
 	"\x03qty\x18\x05 \x01(\tR\x03qty\x12*\n" +
 	"\x11quoted_unit_price\x18\x06 \x01(\tR\x0fquotedUnitPrice\x12\x1a\n" +
-	"\bsubtotal\x18\a \x01(\tR\bsubtotal\"\xbc\x06\n" +
+	"\bsubtotal\x18\a \x01(\tR\bsubtotal\"\xd7\x06\n" +
 	"\vOpportunity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
@@ -1526,7 +1537,8 @@ const file_crm_opportunity_v1_opportunity_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xb5\x01\n" +
+	"updated_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x19\n" +
+	"\border_id\x18\x16 \x01(\tR\aorderId\"\xb5\x01\n" +
 	"\x10OpportunityStage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x12\n" +

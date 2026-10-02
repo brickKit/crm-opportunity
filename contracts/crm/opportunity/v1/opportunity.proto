@@ -72,6 +72,10 @@ message Opportunity {
   int64    version               = 19;
   google.protobuf.Timestamp created_at = 20;
   google.protobuf.Timestamp updated_at = 21;
+  // 赢单转出的订单 id：消费 erp/sales 的 sales.order.created.v1（payload 的
+  // source_opportunity_id 等于本商机）回填；还没有订单时为空串。只是一个 id，
+  // 订单的状态归 erp/sales。
+  string   order_id              = 22;
 }
 
 message OpportunityStage {

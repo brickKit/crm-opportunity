@@ -53,6 +53,7 @@ type Opportunity struct {
 	Currency          string
 	LostReason        string
 	WonAt             time.Time
+	OrderID           string // 赢单转出的订单 id，由订单事件回填；没有订单时为空串
 	Version           int64
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -79,12 +80,12 @@ func getOpportunityTx(ctx context.Context, tx *sql.Tx, id string) (*Opportunity,
 	row := tx.QueryRowContext(ctx, `
 		SELECT o.id, o.name, o.customer_id, o.customer_name, o.owner_id, o.dept_id, o.dept_path,
 			o.stage_id, s.name, o.expected_amount, o.probability, o.expected_close_date, o.status,
-			o.currency, o.lost_reason, o.won_at, o.version, o.created_at, o.updated_at
+			o.currency, o.lost_reason, o.won_at, o.order_id, o.version, o.created_at, o.updated_at
 		FROM opportunities o JOIN opportunity_stages s ON s.id = o.stage_id
 		WHERE o.id = $1`, oppID)
 	if err := row.Scan(&rawID, &o.Name, &o.CustomerID, &o.CustomerName, &o.OwnerID, &o.DeptID, &o.DeptPath,
 		&stageID, &o.StageName, &o.ExpectedAmount, &o.Probability, &expectedCloseDate, &o.Status,
-		&o.Currency, &o.LostReason, &wonAt, &o.Version, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		&o.Currency, &o.LostReason, &wonAt, &o.OrderID, &o.Version, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("%w: opportunity id=%s", ErrNotFound, id)
 		}

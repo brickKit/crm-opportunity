@@ -69,7 +69,7 @@ func toProtoOpportunity(o *repo.Opportunity) *opportunityv1.Opportunity {
 		OwnerId: o.OwnerID, DeptId: o.DeptID, DeptPath: o.DeptPath,
 		StageId: o.StageID, StageName: o.StageName, Items: items,
 		ExpectedAmount: o.ExpectedAmount, Probability: int32(o.Probability), WeightedAmount: o.WeightedAmount,
-		Status: toProtoStatus(o.Status), Currency: o.Currency, LostReason: o.LostReason,
+		Status: toProtoStatus(o.Status), Currency: o.Currency, LostReason: o.LostReason, OrderId: o.OrderID,
 		Version: o.Version, CreatedAt: timestamppb.New(o.CreatedAt), UpdatedAt: timestamppb.New(o.UpdatedAt),
 	}
 	if !o.ExpectedCloseDate.IsZero() {

@@ -59,7 +59,7 @@ func toOpportunityDTO(o *repo.Opportunity) gin.H {
 		"owner_id": o.OwnerID, "dept_id": o.DeptID, "dept_path": o.DeptPath,
 		"stage_id": o.StageID, "stage_name": o.StageName, "items": items,
 		"expected_amount": o.ExpectedAmount, "probability": o.Probability, "weighted_amount": o.WeightedAmount,
-		"status": o.Status, "currency": o.Currency, "lost_reason": o.LostReason,
+		"status": o.Status, "currency": o.Currency, "lost_reason": o.LostReason, "order_id": o.OrderID,
 		"version": o.Version, "created_at": o.CreatedAt.Format(rfc3339), "updated_at": o.UpdatedAt.Format(rfc3339),
 	}
 	if !o.ExpectedCloseDate.IsZero() {
