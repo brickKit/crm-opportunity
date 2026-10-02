@@ -39,11 +39,10 @@ CREATE TABLE event_outbox_2026_09_28 PARTITION OF event_outbox
 CREATE INDEX event_outbox_pending ON event_outbox (status, created_at)
   WHERE status = 'PENDING';
 
--- ⚠️ 实测踩坑（同其它组件的 002 迁移）：建分区要求执行者是父表的
--- owner，迁移用管理凭据跑，建出来的表默认属于那个账号；分区维护后台
--- 任务运行时用 crm_opportunity_rw（SET LOCAL ROLE 切换）建未来的分区，
--- 两者不是同一身份，必须显式把 owner 转过去。
-ALTER TABLE event_outbox OWNER TO crm_opportunity_rw;
+-- ⚠️ 建分区要求执行者是父表的属主。迁移以组件自己的登录角色（PG_USER）运行，
+-- 建出来的表本来就归它；分区维护后台任务运行时也是这个角色（SET LOCAL ROLE
+-- 到 PG_USER），所以不需要也不许写 OWNER TO：迁移里不出现任何角色名，换一个
+-- 角色、换一个 schema 照样能部署。
 
 CREATE TABLE event_inbox (
     id              BIGSERIAL,
@@ -66,9 +65,6 @@ CREATE TABLE event_inbox_2026_09_28 PARTITION OF event_inbox
   FOR VALUES FROM ('2026-09-28') TO ('2026-10-05');
 -- 消费幂等靠这个唯一约束（§4.6：被调用方在数据库中使用唯一约束去重）。
 CREATE UNIQUE INDEX event_inbox_idem ON event_inbox (idempotency_key, created_at);
-
--- 同上：分区维护后台任务要能给 event_inbox 建未来的分区。
-ALTER TABLE event_inbox OWNER TO crm_opportunity_rw;
 
 -- 写命令的幂等表（命令侧，与事件消费侧的 event_inbox 分开）。
 -- CreateOpportunity/UpdateOpportunity/ChangeStage/MarkWon/MarkLost 的

@@ -20,7 +20,6 @@ CREATE TABLE opportunity_stages (
     CONSTRAINT opportunity_stages_probability_range CHECK (default_probability BETWEEN 0 AND 100)
 );
 CREATE INDEX opportunity_stages_sort ON opportunity_stages (sort_order);
-ALTER TABLE opportunity_stages OWNER TO crm_opportunity_rw;
 
 -- 商机主体。⚠️ 不分区（设计计划 §2、§7）——跟随 §11.2.5 分区大表清单
 -- （那张表里有 crm-activity，没有 crm-opportunity）：活动记录是每次
@@ -63,7 +62,6 @@ CREATE INDEX opportunities_stage    ON opportunities (stage_id);
 -- org/owner 数据权限维（设计书 §14.2.2、assembly.yaml 已声明）
 CREATE INDEX opportunities_dept_path ON opportunities (dept_path text_pattern_ops);
 CREATE INDEX opportunities_owner     ON opportunities (owner_id);
-ALTER TABLE opportunities OWNER TO crm_opportunity_rw;
 
 -- 商机行：这次机会打算卖哪些产品、多少量、什么价。全部快照，不 join
 -- （设计计划 §2.1，同 sales_order_items 的既有判据）：产品数据在另一个
@@ -93,7 +91,6 @@ CREATE TABLE opportunity_items (
 );
 CREATE INDEX opportunity_items_opportunity ON opportunity_items (opportunity_id);
 CREATE INDEX opportunity_items_product     ON opportunity_items (product_id);
-ALTER TABLE opportunity_items OWNER TO crm_opportunity_rw;
 
 -- 阶段流转历史：只增不改（设计计划 §2）。同 sales_order_reconciliation_
 -- queue 的既有判据——纯追加日志不需要 §11.2.1 那套 created_at/updated_at/
@@ -109,7 +106,6 @@ CREATE TABLE opportunity_stage_history (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX opportunity_stage_history_opportunity ON opportunity_stage_history (opportunity_id, created_at);
-ALTER TABLE opportunity_stage_history OWNER TO crm_opportunity_rw;
 
 -- mdm-customer 的展示快照：只取 name（设计计划 §5 的三方分工——本组件
 -- 不关心信用额度，那是 erp-sales 的事）。
@@ -122,4 +118,3 @@ CREATE TABLE customer_snapshots (
     version     BIGINT         NOT NULL DEFAULT 1,
     status      TEXT           NOT NULL DEFAULT 'ACTIVE'
 );
-ALTER TABLE customer_snapshots OWNER TO crm_opportunity_rw;
