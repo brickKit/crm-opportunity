@@ -18,7 +18,11 @@ func TestInScope(t *testing.T) {
 		{"org 前缀命中", "/1/12/34/", "u_other", "/1/12/", "u_me", true},
 		{"owner 精确命中", "/9/99/", "u_me", "/1/12/", "u_me", true},
 		{"两者都不命中", "/9/99/", "u_other", "/1/12/", "u_me", false},
-		{"scopePrefix 为空（部门树根节点）天然匹配全部", "/9/99/", "u_other", "", "u_me", true},
+		// 空前缀只可能是调用方漏填（SDK 保证调用者的前缀不是空串），org 一侧不命中，不是"全部"
+		{"scopePrefix 为空时 org 一侧不命中", "/9/99/", "u_other", "", "u_me", false},
+		{"scopePrefix 为空时 owner 一侧照常命中", "/9/99/", "u_me", "", "u_me", true},
+		{"根标记 / 命中任何真实部门路径", "/9/99/", "u_other", "/", "u_me", true},
+		{"根标记 / 不命中 dept_path 为空的行", "", "u_other", "/", "u_me", false},
 		{"两者都命中也是 true（OR 不是异或）", "/1/12/", "u_me", "/1/12/", "u_me", true},
 	}
 	for _, c := range cases {
