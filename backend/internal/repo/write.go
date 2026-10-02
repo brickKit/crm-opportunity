@@ -1,9 +1,7 @@
-// 五个写命令：CreateOpportunity/UpdateOpportunity/ChangeStage/MarkWon/
-// MarkLost。⚠️ 本组件没有 TCC 编排——两条强依赖（mdm-customer/
-// mdm-product 的 BatchGet）在 service 层直接校验完、把校验结果（客户
-// 展示名、产品快照）当参数传进来，这一层只管幂等 + 状态机 + 发事件，
-// 不发起任何网络调用（同 erp-sales FinalizeConfirm 的既有判据，但没有
-// 补偿链）。
+// 五个写命令：CreateOpportunity / UpdateOpportunity / ChangeStage / MarkWon /
+// MarkLost。跨组件校验（mdm-customer / mdm-product 的 BatchGet）在 service 层
+// 做完，校验结果（客户展示名、产品快照）当参数传进来；这一层只管幂等、状态机
+// 与发事件，不发起任何网络调用——事务里夹网络调用，下游一慢就长时间占着行锁。
 package repo
 
 import (
@@ -19,9 +17,90 @@ import (
 
 var ErrVersionConflict = fmt.Errorf("%w: version 与当前值不一致", ErrInvalidArgument)
 
-// ── CreateOpportunity：建档，起始阶段固定用 sort_order 最小的那个
-// （契约没有留 stage_id 入参）。跨组件校验（BatchGet 客户/产品）由
-// service 层做完，这里只管落库 ──
+// runCommand 是五个写命令共用的事务骨架：claim-first 幂等 → 业务步骤 → 落地
+// 结果。同一个幂等键第二次进来时直接返回第一次的结果（重放），不再执行 apply。
+// apply 返回命令产生 / 影响的那条商机（已经是写完之后的状态）。
+//
+// 业务步骤与 Outbox 写入都在 apply 里、和状态变更同一个事务：事务提交了事件
+// 就一定会发，回滚了事件就一定不发，不存在"商机赢了、事件丢了"的窗口。
+func (r *Repo) runCommand(ctx context.Context, key, command string,
+	apply func(tx *sql.Tx) (*Opportunity, error)) (*Opportunity, error) {
+	if key == "" {
+		return nil, fmt.Errorf("%w: idempotency_key 不能为空", ErrInvalidArgument)
+	}
+	var opp *Opportunity
+	err := besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
+		claimed, err := claimIdempotency(ctx, tx, key, command)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			resultID, err := lookupIdempotencyResult(ctx, tx, key)
+			if err != nil {
+				return err
+			}
+			opp, err = getOpportunityTx(ctx, tx, resultID)
+			return err
+		}
+		opp, err = apply(tx)
+		if err != nil {
+			return err
+		}
+		return finalizeIdempotency(ctx, tx, key, opp.ID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return opp, nil
+}
+
+// lockedOpportunity 是写命令在 FOR UPDATE 锁住商机之后要用的几个字段。
+type lockedOpportunity struct {
+	Status  string
+	Version int64
+	StageID int64
+}
+
+// lockOpenTx 锁住商机并确认它还是 OPEN：改阶段、改内容、赢单、输单都只对
+// OPEN 有意义。FOR UPDATE 让两个几乎同时到达的命令串行，后到的那个看到的是
+// 前一个提交后的状态。
+func lockOpenTx(ctx context.Context, tx *sql.Tx, oppID int64, id string) (lockedOpportunity, error) {
+	var l lockedOpportunity
+	if err := tx.QueryRowContext(ctx,
+		`SELECT status, version, stage_id FROM opportunities WHERE id = $1 FOR UPDATE`, oppID,
+	).Scan(&l.Status, &l.Version, &l.StageID); err != nil {
+		if err == sql.ErrNoRows {
+			return l, fmt.Errorf("%w: opportunity id=%s", ErrNotFound, id)
+		}
+		return l, fmt.Errorf("查 opportunities: %w", err)
+	}
+	if l.Status != StatusOpen {
+		return l, fmt.Errorf("%w: opportunity id=%s status=%s", ErrOpportunityTerminal, id, l.Status)
+	}
+	return l, nil
+}
+
+// publishTx 把事件写进 Outbox（与调用方的状态变更同一个事务），信封的
+// version 取商机写完之后的 version，消费方据此丢弃乱序到达的旧事件。
+func (r *Repo) publishTx(tx *sql.Tx, subject string, opp *Opportunity, payload any) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return besdk.PublishOutbox(tx, r.schema, besdk.Event{
+		Subject: subject, AggregateID: opp.ID, Version: opp.Version, Payload: raw,
+	})
+}
+
+func nullableDate(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+// ── CreateOpportunity：建档。起始阶段固定是 sort_order 最小的那个（契约没有
+// 起始阶段入参：建档即进漏斗第一格）──
 
 type CreateOpportunityItemInput struct {
 	ProductID       string
@@ -42,8 +121,8 @@ type CreateOpportunityInput struct {
 	ProbabilityOverride *int // nil = 用起始阶段的 default_probability
 	ExpectedCloseDate   time.Time
 	Currency            string
-	// dept_id/dept_path/owner_id 是创建时快照（设计计划 §1）。调用方从
-	// besdk.ScopeOf(ctx) 取真实值。
+	// dept_id / dept_path / owner_id 是创建时快照，调用方从 besdk.ScopeOf(ctx)
+	// 取真实值；之后这个人换部门，商机的归属不跟着变。
 	DeptID   string
 	DeptPath string
 	OwnerID  string
@@ -75,24 +154,10 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 		return nil, fmt.Errorf("%w: items 不能为空", ErrInvalidArgument)
 	}
 
-	var opp *Opportunity
-	err := besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
-		claimed, err := claimIdempotency(ctx, tx, in.IdempotencyKey, "crm.opportunity.create")
-		if err != nil {
-			return err
-		}
-		if !claimed {
-			resultID, err := lookupIdempotencyResult(ctx, tx, in.IdempotencyKey)
-			if err != nil {
-				return err
-			}
-			opp, err = getOpportunityTx(ctx, tx, resultID)
-			return err
-		}
-
+	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.create", func(tx *sql.Tx) (*Opportunity, error) {
 		stage, err := firstStageTx(ctx, tx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		probability := stage.DefaultProbability
 		if in.ProbabilityOverride != nil {
@@ -100,12 +165,7 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 		}
 		stageID, err := parseID("stage_id", stage.ID)
 		if err != nil {
-			return err
-		}
-
-		var expectedCloseDate any
-		if !in.ExpectedCloseDate.IsZero() {
-			expectedCloseDate = in.ExpectedCloseDate
+			return nil, err
 		}
 
 		var id int64
@@ -116,15 +176,16 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING id`,
 			in.Name, in.CustomerID, in.CustomerName, in.OwnerID, in.DeptID, in.DeptPath,
-			stageID, in.ExpectedAmount, probability, expectedCloseDate, StatusOpen, normalizeCurrency(in.Currency),
+			stageID, in.ExpectedAmount, probability, nullableDate(in.ExpectedCloseDate), StatusOpen,
+			normalizeCurrency(in.Currency),
 		).Scan(&id); err != nil {
-			return fmt.Errorf("写 opportunities: %w", err)
+			return nil, fmt.Errorf("写 opportunities: %w", err)
 		}
 
 		for _, it := range in.Items {
 			subtotal, err := computeSubtotal(it.Qty, it.QuotedUnitPrice)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO opportunity_items
@@ -132,27 +193,15 @@ func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 				id, it.ProductID, it.ProductSKU, it.ProductName, it.UOMID, it.Qty, it.QuotedUnitPrice, subtotal,
 			); err != nil {
-				return fmt.Errorf("写 opportunity_items product_id=%s: %w", it.ProductID, err)
+				return nil, fmt.Errorf("写 opportunity_items product_id=%s: %w", it.ProductID, err)
 			}
 		}
-
-		idStr := strconv.FormatInt(id, 10)
-		if err := finalizeIdempotency(ctx, tx, in.IdempotencyKey, idStr); err != nil {
-			return err
-		}
-		opp, err = getOpportunityTx(ctx, tx, idStr)
-		return err
+		return getOpportunityTx(ctx, tx, strconv.FormatInt(id, 10))
 	})
-	if err != nil {
-		return nil, err
-	}
-	return opp, nil
 }
 
-// ── UpdateOpportunity：改名/金额/预计成交日/负责人。全量替换语义（同
-// mdm-customer UpdateRequest 的既有判据），不是部分 PATCH——未变的字段
-// 由调用方原样带回。只有 OPEN 状态能改（设计计划没有给"改已终结商机"
-// 留任何语义）──
+// ── UpdateOpportunity：改名 / 金额 / 预计成交日 / 负责人。全量替换语义，不是
+// 部分 PATCH：没变的字段由调用方原样带回。只有 OPEN 能改，version 是乐观锁 ──
 
 type UpdateOpportunityInput struct {
 	IdempotencyKey    string
@@ -173,67 +222,31 @@ func (r *Repo) UpdateOpportunity(ctx context.Context, in UpdateOpportunityInput)
 		return nil, err
 	}
 
-	var opp *Opportunity
-	err = besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
-		claimed, err := claimIdempotency(ctx, tx, in.IdempotencyKey, "crm.opportunity.update")
+	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.update", func(tx *sql.Tx) (*Opportunity, error) {
+		locked, err := lockOpenTx(ctx, tx, oppID, in.ID)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !claimed {
-			resultID, err := lookupIdempotencyResult(ctx, tx, in.IdempotencyKey)
-			if err != nil {
-				return err
-			}
-			opp, err = getOpportunityTx(ctx, tx, resultID)
-			return err
-		}
-
-		var status string
-		var version int64
-		if err := tx.QueryRowContext(ctx,
-			`SELECT status, version FROM opportunities WHERE id = $1 FOR UPDATE`, oppID,
-		).Scan(&status, &version); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("%w: opportunity id=%s", ErrNotFound, in.ID)
-			}
-			return fmt.Errorf("查 opportunities: %w", err)
-		}
-		if status != StatusOpen {
-			return fmt.Errorf("%w: opportunity id=%s status=%s", ErrOpportunityTerminal, in.ID, status)
-		}
-		if version != in.Version {
-			return fmt.Errorf("%w: opportunity id=%s 传入 version=%d 库中 version=%d", ErrVersionConflict, in.ID, in.Version, version)
-		}
-
-		var expectedCloseDate any
-		if !in.ExpectedCloseDate.IsZero() {
-			expectedCloseDate = in.ExpectedCloseDate
+		if locked.Version != in.Version {
+			return nil, fmt.Errorf("%w: opportunity id=%s 传入 version=%d 库中 version=%d",
+				ErrVersionConflict, in.ID, in.Version, locked.Version)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE opportunities
 			SET name = $1, expected_amount = $2, expected_close_date = $3, owner_id = $4,
 				version = version + 1, updated_at = now()
 			WHERE id = $5`,
-			in.Name, in.ExpectedAmount, expectedCloseDate, in.OwnerID, oppID,
+			in.Name, in.ExpectedAmount, nullableDate(in.ExpectedCloseDate), in.OwnerID, oppID,
 		); err != nil {
-			return fmt.Errorf("更新 opportunities: %w", err)
+			return nil, fmt.Errorf("更新 opportunities: %w", err)
 		}
-
-		opp, err = getOpportunityTx(ctx, tx, in.ID)
-		if err != nil {
-			return err
-		}
-		return finalizeIdempotency(ctx, tx, in.IdempotencyKey, in.ID)
+		return getOpportunityTx(ctx, tx, in.ID)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return opp, nil
 }
 
-// ── ChangeStage：阶段推进，写历史。本阶段任意阶段之间都可以跳转，只记
-// 历史，不实现"必须按顺序推进""跳阶段要审批"这类约束（设计计划 §2.2、
-// §8 的 R-4 判定：这两条分歧判定为 Fork 点，不建族）──
+// ── ChangeStage：阶段推进，写历史。任意两个阶段之间都可以跳转，只记历史，
+// 不做"必须按顺序推进""跳阶段要审批"这类约束（这是客户之间真实存在的分歧，
+// 标准版取最宽松的一种，更严的流程管控走定制）──
 
 type ChangeStageInput struct {
 	IdempotencyKey      string
@@ -256,38 +269,14 @@ func (r *Repo) ChangeStage(ctx context.Context, in ChangeStageInput) (*Opportuni
 		return nil, err
 	}
 
-	var opp *Opportunity
-	err = besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
-		claimed, err := claimIdempotency(ctx, tx, in.IdempotencyKey, "crm.opportunity.change_stage")
+	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.change_stage", func(tx *sql.Tx) (*Opportunity, error) {
+		locked, err := lockOpenTx(ctx, tx, oppID, in.ID)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !claimed {
-			resultID, err := lookupIdempotencyResult(ctx, tx, in.IdempotencyKey)
-			if err != nil {
-				return err
-			}
-			opp, err = getOpportunityTx(ctx, tx, resultID)
-			return err
-		}
-
-		var status string
-		var fromStageID int64
-		if err := tx.QueryRowContext(ctx,
-			`SELECT status, stage_id FROM opportunities WHERE id = $1 FOR UPDATE`, oppID,
-		).Scan(&status, &fromStageID); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("%w: opportunity id=%s", ErrNotFound, in.ID)
-			}
-			return fmt.Errorf("查 opportunities: %w", err)
-		}
-		if status != StatusOpen {
-			return fmt.Errorf("%w: opportunity id=%s status=%s", ErrOpportunityTerminal, in.ID, status)
-		}
-
 		toStage, err := getStageTx(ctx, tx, toStageID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		probability := toStage.DefaultProbability
 		if in.ProbabilityOverride != nil {
@@ -297,45 +286,30 @@ func (r *Repo) ChangeStage(ctx context.Context, in ChangeStageInput) (*Opportuni
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE opportunities SET stage_id = $1, probability = $2, version = version + 1, updated_at = now()
 			WHERE id = $3`, toStageID, probability, oppID); err != nil {
-			return fmt.Errorf("更新 opportunities: %w", err)
+			return nil, fmt.Errorf("更新 opportunities: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO opportunity_stage_history (opportunity_id, from_stage_id, to_stage_id, changed_by)
-			VALUES ($1, $2, $3, $4)`, oppID, fromStageID, toStageID, in.ChangedBy); err != nil {
-			return fmt.Errorf("写 opportunity_stage_history: %w", err)
+			VALUES ($1, $2, $3, $4)`, oppID, locked.StageID, toStageID, in.ChangedBy); err != nil {
+			return nil, fmt.Errorf("写 opportunity_stage_history: %w", err)
 		}
 
-		opp, err = getOpportunityTx(ctx, tx, in.ID)
+		opp, err := getOpportunityTx(ctx, tx, in.ID)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		payload, err := json.Marshal(map[string]any{
+		return opp, r.publishTx(tx, "crm.opportunity.stage_changed.v1", opp, map[string]any{
 			"opportunity_id": in.ID,
-			"from_stage":     strconv.FormatInt(fromStageID, 10),
+			"from_stage":     strconv.FormatInt(locked.StageID, 10),
 			"to_stage":       in.ToStageID,
 		})
-		if err != nil {
-			return err
-		}
-		if err := besdk.PublishOutbox(tx, r.schema, besdk.Event{
-			Subject: "crm.opportunity.stage_changed.v1", AggregateID: in.ID, Version: opp.Version, Payload: payload,
-		}); err != nil {
-			return err
-		}
-
-		return finalizeIdempotency(ctx, tx, in.IdempotencyKey, in.ID)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return opp, nil
 }
 
-// ── MarkWon：⭐ 链路的扳机（设计计划 §4.1）。转 WON + 写 Outbox，全部在
-// 同一个事务里。⚠️ owner_id/dept_path 必须带进事件——erp-sales 的
-// handler 跑在事件消费路径（SystemClient/无 JWT 上下文），漏了这两个
-// 字段订单会建出来但没有归属，且不报任何错 ──
+// ── MarkWon：赢单，链路的扳机。转 WON + 写 Outbox 在同一个事务里。事件必须
+// 带 owner_id / dept_path：erp-sales 在事件消费路径上建单，那里没有用户的
+// JWT，订单的归属只能从事件里来——漏了不报错，订单建出来了，只是"我的订单"
+// 和部门视图里谁都看不到它 ──
 
 type MarkWonInput struct {
 	IdempotencyKey string
@@ -351,64 +325,24 @@ func (r *Repo) MarkWon(ctx context.Context, in MarkWonInput) (*Opportunity, erro
 		return nil, err
 	}
 
-	var opp *Opportunity
-	err = besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
-		claimed, err := claimIdempotency(ctx, tx, in.IdempotencyKey, "crm.opportunity.win")
-		if err != nil {
-			return err
+	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.win", func(tx *sql.Tx) (*Opportunity, error) {
+		if _, err := lockOpenTx(ctx, tx, oppID, in.ID); err != nil {
+			return nil, err
 		}
-		if !claimed {
-			resultID, err := lookupIdempotencyResult(ctx, tx, in.IdempotencyKey)
-			if err != nil {
-				return err
-			}
-			opp, err = getOpportunityTx(ctx, tx, resultID)
-			return err
-		}
-
-		var status string
-		if err := tx.QueryRowContext(ctx,
-			`SELECT status FROM opportunities WHERE id = $1 FOR UPDATE`, oppID,
-		).Scan(&status); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("%w: opportunity id=%s", ErrNotFound, in.ID)
-			}
-			return fmt.Errorf("查 opportunities: %w", err)
-		}
-		if status != StatusOpen {
-			return fmt.Errorf("%w: opportunity id=%s status=%s", ErrOpportunityTerminal, in.ID, status)
-		}
-
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE opportunities SET status = $1, probability = 100, won_at = now(), version = version + 1, updated_at = now()
 			WHERE id = $2`, StatusWon, oppID); err != nil {
-			return fmt.Errorf("更新 opportunities: %w", err)
+			return nil, fmt.Errorf("更新 opportunities: %w", err)
 		}
-
-		opp, err = getOpportunityTx(ctx, tx, in.ID)
+		opp, err := getOpportunityTx(ctx, tx, in.ID)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		payload, err := buildWonPayload(opp)
-		if err != nil {
-			return err
-		}
-		if err := besdk.PublishOutbox(tx, r.schema, besdk.Event{
-			Subject: "crm.opportunity.won.v1", AggregateID: in.ID, Version: opp.Version, Payload: payload,
-		}); err != nil {
-			return err
-		}
-
-		return finalizeIdempotency(ctx, tx, in.IdempotencyKey, in.ID)
+		return opp, r.publishTx(tx, "crm.opportunity.won.v1", opp, wonPayload(opp))
 	})
-	if err != nil {
-		return nil, err
-	}
-	return opp, nil
 }
 
-func buildWonPayload(o *Opportunity) ([]byte, error) {
+func wonPayload(o *Opportunity) map[string]any {
 	items := make([]map[string]string, 0, len(o.Items))
 	for _, it := range o.Items {
 		items = append(items, map[string]string{
@@ -423,10 +357,10 @@ func buildWonPayload(o *Opportunity) ([]byte, error) {
 	if !o.ExpectedCloseDate.IsZero() {
 		payload["expected_close_date"] = o.ExpectedCloseDate.Format(time.RFC3339)
 	}
-	return json.Marshal(payload)
+	return payload
 }
 
-// ── MarkLost：转 LOST，要求填原因（设计计划 §8，借鉴 Odoo loss reason）──
+// ── MarkLost：输单，必须填原因（失单原因是销售复盘最有用的那一列）──
 
 type MarkLostInput struct {
 	IdempotencyKey string
@@ -446,61 +380,21 @@ func (r *Repo) MarkLost(ctx context.Context, in MarkLostInput) (*Opportunity, er
 		return nil, err
 	}
 
-	var opp *Opportunity
-	err = besdk.WithTx(ctx, r.db, r.role, r.schema, func(tx *sql.Tx) error {
-		claimed, err := claimIdempotency(ctx, tx, in.IdempotencyKey, "crm.opportunity.lose")
-		if err != nil {
-			return err
+	return r.runCommand(ctx, in.IdempotencyKey, "crm.opportunity.lose", func(tx *sql.Tx) (*Opportunity, error) {
+		if _, err := lockOpenTx(ctx, tx, oppID, in.ID); err != nil {
+			return nil, err
 		}
-		if !claimed {
-			resultID, err := lookupIdempotencyResult(ctx, tx, in.IdempotencyKey)
-			if err != nil {
-				return err
-			}
-			opp, err = getOpportunityTx(ctx, tx, resultID)
-			return err
-		}
-
-		var status string
-		if err := tx.QueryRowContext(ctx,
-			`SELECT status FROM opportunities WHERE id = $1 FOR UPDATE`, oppID,
-		).Scan(&status); err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("%w: opportunity id=%s", ErrNotFound, in.ID)
-			}
-			return fmt.Errorf("查 opportunities: %w", err)
-		}
-		if status != StatusOpen {
-			return fmt.Errorf("%w: opportunity id=%s status=%s", ErrOpportunityTerminal, in.ID, status)
-		}
-
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE opportunities SET status = $1, lost_reason = $2, version = version + 1, updated_at = now()
 			WHERE id = $3`, StatusLost, in.Reason, oppID); err != nil {
-			return fmt.Errorf("更新 opportunities: %w", err)
+			return nil, fmt.Errorf("更新 opportunities: %w", err)
 		}
-
-		opp, err = getOpportunityTx(ctx, tx, in.ID)
+		opp, err := getOpportunityTx(ctx, tx, in.ID)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		payload, err := json.Marshal(map[string]any{
+		return opp, r.publishTx(tx, "crm.opportunity.lost.v1", opp, map[string]any{
 			"opportunity_id": in.ID, "reason": in.Reason, "amount": opp.ExpectedAmount,
 		})
-		if err != nil {
-			return err
-		}
-		if err := besdk.PublishOutbox(tx, r.schema, besdk.Event{
-			Subject: "crm.opportunity.lost.v1", AggregateID: in.ID, Version: opp.Version, Payload: payload,
-		}); err != nil {
-			return err
-		}
-
-		return finalizeIdempotency(ctx, tx, in.IdempotencyKey, in.ID)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return opp, nil
 }
