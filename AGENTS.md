@@ -47,8 +47,8 @@ The AI guide to developing this component. How to use it, its boundaries and con
 
 ```bash
 # tests run against the test database brickkit_test_db, never brickkit_db (make test-db-init ID=crm/opportunity at the project root)
-set -a; . ../../../.env; set +a
-export TEST_PG_DSN="postgres://postgres:${POSTGRES_PASSWORD}@localhost:5432/brickkit_test_db?sslmode=disable"
+# the password is POSTGRES_PASSWORD in the project's .env (URL-encode it); don't source .env (Compose syntax, multi-line PEM)
+export TEST_PG_DSN="postgres://postgres:<password>@localhost:5432/brickkit_test_db?sslmode=disable"
 make test                    # every package ends in "ok"; refuses to run without TEST_PG_DSN
 go test ./... -count=1 -v | grep -- '--- SKIP'   # only the three cross-component tests in backend/internal/service/ (service_test.go, nodept_test.go)
 make check-version dag-check contract-check import-scan module-check   # each prints one ✓ line

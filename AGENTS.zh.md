@@ -47,8 +47,8 @@
 
 ```bash
 # 测试连测试库 brickkit_test_db，绝不连 brickkit_db（项目根 make test-db-init ID=crm/opportunity）
-set -a; . ../../../.env; set +a
-export TEST_PG_DSN="postgres://postgres:${POSTGRES_PASSWORD}@localhost:5432/brickkit_test_db?sslmode=disable"
+# 密码是项目 .env 里的 POSTGRES_PASSWORD（要 URL 编码）；不要 source .env（Compose 语法，含多行 PEM）
+export TEST_PG_DSN="postgres://postgres:<密码>@localhost:5432/brickkit_test_db?sslmode=disable"
 make test                    # 每个包都以 "ok" 结尾；没设 TEST_PG_DSN 时拒绝运行
 go test ./... -count=1 -v | grep -- '--- SKIP'   # 只有 backend/internal/service/ 里的三条跨组件测试（service_test.go、nodept_test.go）
 make check-version dag-check contract-check import-scan module-check   # 各打印一行 ✓
