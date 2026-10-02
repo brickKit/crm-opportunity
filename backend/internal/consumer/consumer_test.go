@@ -6,6 +6,7 @@ package consumer
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -69,16 +70,23 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// 测试私有 subject：本机正在跑的组件容器订阅的是生产 subject，用生产名字
+	// 发布时消息可能被它消费掉、写进演示库，这里就等不到。
+	stamp := time.Now().UnixNano()
+	s := subjects{
+		CustomerCreated: fmt.Sprintf("test.mdm.customer.created.v1.%d", stamp),
+		CustomerUpdated: fmt.Sprintf("test.mdm.customer.updated.v1.%d", stamp),
+		OrderCreated:    fmt.Sprintf("test.sales.order.created.v1.%d", stamp),
+	}
 	errCh := make(chan error, 1)
-	go func() { errCh <- Start(ctx, db, "crm_opportunity_rw", "crm_opportunity", nc, nil) }()
+	go func() { errCh <- start(ctx, db, "crm_opportunity_rw", "crm_opportunity", nc, nil, s) }()
 	// NATS core pub/sub 没有队列：订阅是异步注册的，发布早于订阅注册完成
-	// 那条消息就直接丢了，不会重投（同 erp-sales consumer_test.go 的
-	// 既有判据，Start 内部对每个 subject 各起一个 goroutine 调
-	// besdk.Consume，给它们一点真实注册时间）。
+	// 那条消息就直接丢了，不会重投。start 对每个 subject 各起一个 goroutine
+	// 调 besdk.Consume，给它们一点真实注册时间。
 	time.Sleep(150 * time.Millisecond)
 
 	customerID := uniqueID(t)
-	publishEvent(t, nc, "mdm.customer.created.v1", customerID, 1,
+	publishEvent(t, nc, s.CustomerCreated, customerID, 1,
 		`{"id":"`+customerID+`","name":"真实消费测试客户"}`)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -96,7 +104,7 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 	}
 
 	// version 单调更新：旧版本事件不该覆盖新值。
-	publishEvent(t, nc, "mdm.customer.updated.v1", customerID, 0, // version=0 < 1，应被忽略
+	publishEvent(t, nc, s.CustomerUpdated, customerID, 0, // version=0 < 1，应被忽略
 		`{"id":"`+customerID+`","name":"不该生效的旧版本名字"}`)
 	time.Sleep(500 * time.Millisecond)
 	if err := db.QueryRowContext(context.Background(),
@@ -107,4 +115,3 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 		t.Fatalf("旧版本事件不该覆盖，期望仍是'真实消费测试客户'，实际 %q", name)
 	}
 }
-
