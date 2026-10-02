@@ -8,6 +8,12 @@
 # 时用的幂等键固定是 `crm-won:<opportunity_id>`，按它精确删除；不按种子客户
 # id 反查所有订单（那会把这几个客户名下不是 seed 建的订单也清掉）。
 set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$DIR/../../.." && pwd)"
+source "$DIR/scripts/schema.sh"
+SCHEMA="$(schema_of crm/opportunity)"
+# erp/sales 不在项目里时它没有配置文件，也就没有联带订单要清（下面按表在不在判断）
+SALES_SCHEMA="$(schema_of erp/sales 2>/dev/null || true)"
 C_GRN=$'\033[32m'; C_OFF=$'\033[0m'
 ok()  { echo "${C_GRN}✓${C_OFF} $*"; }
 
@@ -16,24 +22,25 @@ psqlx() { docker exec -i be-postgres psql -U postgres -d brickkit_db -v ON_ERROR
 has_table() { [ "$(psqlx -tA -q -c "SELECT to_regclass('$1') IS NOT NULL;")" = "t" ]; }
 
 # 本组件的迁移还没在演示库跑过（从没 up 过），就没有任何种子可撤销
-if ! has_table crm_opportunity.command_idempotency; then
-  ok "crm_opportunity 的表还不存在（迁移没在 brickkit_db 跑过），没有种子要撤销"
+if ! has_table "$SCHEMA.command_idempotency"; then
+  ok "$SCHEMA 的表还不存在（迁移没在 brickkit_db 跑过），没有种子要撤销"
   exit 0
 fi
 
 # ── 先反查两个 WON 商机（seed-opp-4/seed-opp-9）的真实 id，再反查
-# erp-sales 那边对应的订单 id——必须在下面①清空 crm_opportunity 自己
+# erp-sales 那边对应的订单 id——必须在下面②清空本组件自己
 # 的 command_idempotency 之前做，不然这两个 id 就再也查不到了。
-OPP4_ID="$(psqlx -tA -q -c "SET search_path TO crm_opportunity; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-4';")"
-OPP9_ID="$(psqlx -tA -q -c "SET search_path TO crm_opportunity; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-9';")"
-OPP11_ID="$(psqlx -tA -q -c "SET search_path TO crm_opportunity; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-11';")"
+OPP4_ID="$(psqlx -tA -q -c "SET search_path TO $SCHEMA; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-4';")"
+OPP9_ID="$(psqlx -tA -q -c "SET search_path TO $SCHEMA; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-9';")"
+OPP11_ID="$(psqlx -tA -q -c "SET search_path TO $SCHEMA; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'seed-opp-11';")"
 
 echo "── ① erp-sales：精确清理 WON 商机联带自动建的订单（不是按客户 id 模糊扫）──"
 # erp/sales 不在项目里（本组件可以单独跑）时没有它的表，也就没有联带的订单
-if ! has_table erp_sales.command_idempotency; then
-  ok "erp_sales 的表不存在（erp/sales 没加入项目或没跑过迁移），跳过联带订单"
+if [ -z "$SALES_SCHEMA" ] || ! has_table "$SALES_SCHEMA.command_idempotency"; then
+  ok "erp/sales 的表不存在（erp/sales 没加入项目或没跑过迁移），跳过联带订单"
   OPP4_ID=""; OPP9_ID=""; OPP11_ID=""
 fi
+ORDERS_DELETED=0
 # ⚠️ seed-opp-11 是刻意会赢单失败的商机（信用超限）——订单会真的建出
 # 来（DRAFT，CreateOrder 先于信用校验），但 FinalizeConfirm 那步真的
 # 失败，同时真的建了一条 infra-workflow 异常待办（本组件不清理，那是
@@ -42,22 +49,23 @@ fi
 # 订单，跟 4/9 号走的是同一段代码。
 for opp_id in "$OPP4_ID" "$OPP9_ID" "$OPP11_ID"; do
   [ -n "$opp_id" ] || continue
-  order_id="$(psqlx -tA -q -c "SET search_path TO erp_sales; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'crm-won:$opp_id';")"
+  order_id="$(psqlx -tA -q -c "SET search_path TO $SALES_SCHEMA; SELECT result_id FROM command_idempotency WHERE idempotency_key = 'crm-won:$opp_id';")"
   if [ -n "$order_id" ]; then
     psqlx -q -c "
-      SET search_path TO erp_sales;
+      SET search_path TO $SALES_SCHEMA;
       DELETE FROM sales_order_items WHERE order_id = $order_id;
       DELETE FROM sales_orders WHERE id = $order_id;
       DELETE FROM command_idempotency WHERE idempotency_key IN ('crm-won:$opp_id', 'crm-won:$opp_id:confirm');
     "
     ok "已删除商机 $opp_id 联带的 erp-sales 订单 $order_id"
+    ORDERS_DELETED=$((ORDERS_DELETED + 1))
   fi
 done
 
-echo "── ② crm_opportunity：清空本组件自己的种子商机（1-10 号）──"
-psqlx -q <<'SQL'
-SET search_path TO crm_opportunity;
-DO $$
+echo "── ② $SCHEMA：清空本组件自己的种子商机（1-11 号）──"
+psqlx -q <<SQL
+SET search_path TO $SCHEMA;
+DO \$\$
 DECLARE
   opp_id text;
   opp_ids text[] := ARRAY[]::text[];
@@ -80,6 +88,6 @@ BEGIN
     DELETE FROM command_idempotency WHERE idempotency_key LIKE 'seed-opp-%';
     RAISE NOTICE '删除商机: %', opp_ids;
   END IF;
-END $$;
+END \$\$;
 SQL
-ok "crm-opportunity 种子数据已清空（含联带的 erp-sales 订单）"
+ok "crm-opportunity 种子数据已清空（联带的 erp-sales 订单删了 $ORDERS_DELETED 张）"
