@@ -23,7 +23,7 @@ artifacts:
     files: [assembly.yaml]
 
 dependencies:
-  components: [mdm/customer@2.0.0, mdm/product@2.0.0]
+  components: [mdm/customer@2.0.1, mdm/product@2.0.0]
 
 configSchema:
   type: object

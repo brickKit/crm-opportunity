@@ -45,19 +45,20 @@ migrate-idempotent:  ## 同一份迁移连跑两次都成功。需要 PG_HOST PG
 	@mkdir -p build && go build -o build/migrate-probe ./backend/cmd/migrate
 	@build/migrate-probe up && build/migrate-probe up && echo "✓ 迁移幂等"
 
-dag-check:  ## 依赖恰好是 mdm/customer 与 mdm/product，都钉 @2.0.0；不依赖 erp/* 与 infra/workflow
+dag-check:  ## 依赖恰好是 mdm/customer@2.0.1 与 mdm/product@2.0.0；不依赖 erp/* 与 infra/workflow
 	@# CRM 与 ERP 之间只有事件：赢单发事件，订单号由订单事件回填，从不同步调用对方。
 	@# 一条同步边意味着 erp/sales 不在时商机就建不了、赢不了。
 	@python3 -c 'import sys, yaml; \
 	  deps = (yaml.safe_load(open("component.yaml")).get("dependencies") or {}).get("components") or []; \
 	  ids = [d.split("@")[0] for d in deps]; want = {"mdm/customer", "mdm/product"}; \
-	  bad = [d for d in deps if "@" not in d or d.split("@")[1] != "2.0.0"]; \
+	  pins = {"mdm/customer": "2.0.1", "mdm/product": "2.0.0"}; \
+	  bad = [d for d in deps if "@" not in d or d.split("@")[1] != pins.get(d.split("@")[0])]; \
 	  sync = [i for i in ids if i.startswith("erp/") or i == "infra/workflow"]; \
 	  msg = (sync and f"不许同步依赖 {sync}：CRM 与 ERP 之间只有事件") or \
 	        (set(ids) != want and f"依赖应恰好是 {sorted(want)}，实际 {ids}") or \
-	        (bad and f"依赖必须钉 @2.0.0：{bad}") or \
+	        (bad and f"依赖必须钉 {pins}：{bad}") or \
 	        (len(ids) != len(set(ids)) and f"依赖重复：{ids}"); \
-	  sys.exit(f"✗ {msg}") if msg else print("✓ 依赖 mdm/customer@2.0.0、mdm/product@2.0.0，无 ERP 同步边，无自环")'
+	  sys.exit(f"✗ {msg}") if msg else print("✓ 依赖 mdm/customer@2.0.1、mdm/product@2.0.0，无 ERP 同步边，无自环")'
 
 contract-check:  ## proto 只增不改（buf lint + buf breaking，对比上一个发布 tag；还没有发布过就对比 main）
 	@# 对比 main 抓不住已经提交到 main 上的破坏性改动（在 main 上工作时等于自己比自己），
