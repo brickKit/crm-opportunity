@@ -116,7 +116,7 @@ win_opportunity "$SALES_TOKEN" "$OPP9" seed-opp-9-win
 OPP10="$(mkopportunity "$SALES_TOKEN" seed-opp-10 "「本地测试」华东·鲜达食品饮料·已流失项目" "$CUST8" "$PROD8" 20 15.50 "8000.00")"
 lose_opportunity "$SALES_TOKEN" "$OPP10" seed-opp-10-lose "「本地测试」华东：客户资金紧张，暂缓采购"
 ok "商机（dev.sales.east/华东）：$OPP6(OPEN) $OPP7(PROPOSAL) $OPP8(NEGOTIATION) $OPP9(WON→已自动转订单) $OPP10(LOST)"
-echo "   （$OPP4/$OPP9 赢单后 erp-sales 会真的各自动建一张订单，归属分别是 dev.superuser/无部门 与 dev.sales.east/华东——去 erp_sales.sales_orders 表或前端订单列表看得到）"
+echo "   （$OPP4/$OPP9 赢单后 erp-sales 会真的各自动建一张订单，归属分别是 dev.superuser/总部（根部门 /1/） 与 dev.sales.east/华东——去 erp_sales.sales_orders 表或前端订单列表看得到）"
 
 # ⚠️ seed-opp-11：本组件唯一一条刻意设计成"赢单会真的失败"的商机——
 # infra-workflow 的 CreateTask/CloseTask/CancelTask 明确不暴露 REST
