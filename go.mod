@@ -1,17 +1,21 @@
-module github.com/brickKit/crm-opportunity
+module github.com/brickKit/crm-opportunity/v2
 
-go 1.25.0
+go 1.25.11
 
 require (
-	github.com/brickKit/be-sdk-go v0.2.4
+	github.com/brickKit/be-sdk-go v0.4.0
 	github.com/brickKit/mdm-customer/gen/mdm/customer v1.0.6
 	github.com/brickKit/mdm-product/gen/mdm/product v1.0.7
 	github.com/gin-gonic/gin v1.12.0
-	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/nats-io/nats.go v1.53.1
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
+)
+
+require (
+	github.com/golang-migrate/migrate/v4 v4.20.1 // indirect
+	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
 )
 
 // mdm-customer/gen/mdm/customer、mdm-product/gen/mdm/product 是各自组件
@@ -32,6 +36,7 @@ require (
 	github.com/MicahParks/jwkset v0.11.3 // indirect
 	github.com/MicahParks/keyfunc/v3 v3.8.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/brickKit/crm-opportunity/gen/crm/opportunity v1.0.0
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
@@ -57,7 +62,6 @@ require (
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/lib/pq v1.10.9 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -93,3 +97,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/brickKit/crm-opportunity/gen/crm/opportunity => ./gen/crm/opportunity

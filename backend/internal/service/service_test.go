@@ -22,8 +22,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	besdk "github.com/brickKit/be-sdk-go"
-	"github.com/brickKit/crm-opportunity/backend/internal/client"
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
 
 	customerv1 "github.com/brickKit/mdm-customer/gen/mdm/customer/v1"
 	productv1 "github.com/brickKit/mdm-product/gen/mdm/product/v1"
@@ -36,6 +36,15 @@ func requireE2EEnv(t *testing.T) {
 			t.Skipf("未设置 %s，跳过真故障注入测试（需要依赖组件真的在跑）", k)
 		}
 	}
+}
+
+// e2eConfig 把 test-cross 注入的两个依赖地址装进 besdk.Config：模块代码只从
+// Config 读依赖地址，测试按同一条路径给。
+func e2eConfig() besdk.Config {
+	return besdk.NewConfig(map[string]string{
+		"MDM_CUSTOMER_GRPC_ENDPOINT": os.Getenv("MDM_CUSTOMER_GRPC_ENDPOINT"),
+		"MDM_PRODUCT_GRPC_ENDPOINT":  os.Getenv("MDM_PRODUCT_GRPC_ENDPOINT"),
+	})
 }
 
 func testDB(t *testing.T) *sql.DB {
@@ -74,7 +83,7 @@ func e2eTestCtx() context.Context {
 // createRealCustomer 在真的 mdm-customer 里建一个 ACTIVE 客户，返回其 id。
 func createRealCustomer(t *testing.T, ctx context.Context) (id, name string) {
 	t.Helper()
-	conn, closeConn, err := client.Customer(ctx)
+	conn, closeConn, err := client.Customer(ctx, e2eConfig())
 	if err != nil {
 		t.Fatalf("拨号 mdm-customer 失败: %v", err)
 	}
@@ -95,7 +104,7 @@ func createRealCustomer(t *testing.T, ctx context.Context) (id, name string) {
 // createRealProduct 在真的 mdm-product 里建一个 ACTIVE 产品，返回其 id/sku/name。
 func createRealProduct(t *testing.T, ctx context.Context) (id, sku, name string) {
 	t.Helper()
-	conn, closeConn, err := client.Product(ctx)
+	conn, closeConn, err := client.Product(ctx, e2eConfig())
 	if err != nil {
 		t.Fatalf("拨号 mdm-product 失败: %v", err)
 	}
@@ -119,7 +128,7 @@ func TestCreateOpportunity_真实校验客户与产品并取展示快照(t *test
 	ctx := e2eTestCtx()
 
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, slog.Default())
+	svc := New(r, e2eConfig(), slog.Default())
 
 	customerID, customerName := createRealCustomer(t, ctx)
 	productID, productSKU, productName := createRealProduct(t, ctx)
@@ -175,7 +184,7 @@ func TestGetOpportunity_范围外ErrForbidden(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, slog.Default())
+	svc := New(r, e2eConfig(), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_someone_else")
 
@@ -192,7 +201,7 @@ func TestGetOpportunity_owner精确命中即使部门不同(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, slog.Default())
+	svc := New(r, e2eConfig(), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_e2e_test_owner")
 
@@ -213,7 +222,7 @@ func TestCreateOpportunity_真实客户不存在时拒绝(t *testing.T) {
 	ctx := e2eTestCtx()
 
 	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
-	svc := New(r, slog.Default())
+	svc := New(r, e2eConfig(), slog.Default())
 
 	productID, _, _ := createRealProduct(t, ctx)
 	_, err := svc.CreateOpportunity(ctx, CreateOpportunityInput{

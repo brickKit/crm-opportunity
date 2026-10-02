@@ -9,8 +9,8 @@ import (
 
 	opportunityv1 "github.com/brickKit/crm-opportunity/gen/crm/opportunity/v1"
 
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
-	"github.com/brickKit/crm-opportunity/backend/internal/service"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/service"
 )
 
 type server struct {

@@ -15,8 +15,8 @@ import (
 
 	besdk "github.com/brickKit/be-sdk-go"
 
-	"github.com/brickKit/crm-opportunity/backend/internal/client"
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
 
 	customerv1 "github.com/brickKit/mdm-customer/gen/mdm/customer/v1"
 	productv1 "github.com/brickKit/mdm-product/gen/mdm/product/v1"
@@ -26,11 +26,12 @@ var ErrInvalidArgument = errors.New("参数不合法")
 
 type Service struct {
 	repo   *repo.Repo
+	cfg    besdk.Config
 	logger *slog.Logger
 }
 
-func New(r *repo.Repo, logger *slog.Logger) *Service {
-	return &Service{repo: r, logger: logger}
+func New(r *repo.Repo, cfg besdk.Config, logger *slog.Logger) *Service {
+	return &Service{repo: r, cfg: cfg, logger: logger}
 }
 
 // checkOpportunityInScope 是 UpdateOpportunity/ChangeStage/MarkWon/
@@ -79,8 +80,8 @@ func uniqueStrings(in []string) []string {
 
 // fetchActiveCustomer 校验客户存在且可用——建档那一刻就要挡住脏数据，
 // 事后对账挡不住（设计计划 §3）。
-func fetchActiveCustomer(ctx context.Context, customerID string) (*customerv1.Customer, error) {
-	conn, closeConn, err := client.Customer(ctx)
+func fetchActiveCustomer(ctx context.Context, cfg besdk.Config, customerID string) (*customerv1.Customer, error) {
+	conn, closeConn, err := client.Customer(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +103,8 @@ func fetchActiveCustomer(ctx context.Context, customerID string) (*customerv1.Cu
 
 // fetchActiveProducts 校验产品存在且可用，返回按 id 索引的 map 供调用方
 // 取展示快照（sku/name/uom）。
-func fetchActiveProducts(ctx context.Context, productIDs []string) (map[string]*productv1.Product, error) {
-	conn, closeConn, err := client.Product(ctx)
+func fetchActiveProducts(ctx context.Context, cfg besdk.Config, productIDs []string) (map[string]*productv1.Product, error) {
+	conn, closeConn, err := client.Product(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 		}
 	}
 
-	customer, err := fetchActiveCustomer(ctx, in.CustomerID)
+	customer, err := fetchActiveCustomer(ctx, s.cfg, in.CustomerID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,7 @@ func (s *Service) CreateOpportunity(ctx context.Context, in CreateOpportunityInp
 	for _, it := range in.Items {
 		productIDs = append(productIDs, it.ProductID)
 	}
-	products, err := fetchActiveProducts(ctx, uniqueStrings(productIDs))
+	products, err := fetchActiveProducts(ctx, s.cfg, uniqueStrings(productIDs))
 	if err != nil {
 		return nil, err
 	}

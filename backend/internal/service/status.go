@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
 )
 
 // ToStatus 把 repo 层的哨兵错误翻成 gRPC status——HTTP 与 gRPC 两条对外

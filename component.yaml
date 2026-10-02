@@ -2,57 +2,11 @@ apiVersion: brickkit/v1
 kind: Component
 
 metadata:
-  id: crm/opportunity                 # ⚠️ Fork 件必须与标准件完全一致（§3.4.1）
-  name: 商机管理
-  version: 1.0.13                     # 精确版本，不接受 ^ / ~ / latest
-                                      # v1.0.13：同 erp/inventory 这次改动，scripts/seed.sh 改成 source infra/scripts/lib/seed-net.sh（含 with_toolbox/get_app_jwt 多身份换取、idfor 反查客户/产品 id），理由同上。真机跑通 make seed（11 条商机，覆盖 OPEN 三阶段/WON/LOST/信用超限赢单失败五种路径），无业务行为/契约变更。
-                                      # v1.0.12：同上，scripts/seed.sh 的 REST+JWT 换取部分改成工具箱容器 + ServiceName() 地址规则。真机在 servedBy 部署下跑通 make seed（① dev.superuser 5 条商机② dev.sales.east 5 条商机 + 1 条信用超限商机），完整验证了阶段四附录 E 业务链路（CRM 赢单→erp-sales 自动建单确认/信用超限拒绝→infra-workflow 异常待办）在这次 servedBy 迁移之后依然端到端成立，见 docs/plans/04b-验证记录.md Task 0.5。无业务行为/契约变更。
-                                      # v1.0.11：同 mdm/customer 这次改动，删掉 deployment.labels 的 prometheus.io/port，理由同上。无业务行为/契约变更。
-                                     # v1.0.10：依赖版本号同步跟进 mdm/customer@1.0.7、mdm/product@1.0.8，无破坏性变更。
-                                     # v1.0.9：不再 vendor mdm-customer/mdm-product 两份契约镜像，改直接 import 真身 gen/ 包（铁律六新增第二类白名单，与 be-sdk-* 同类，设计书§13.3）。原因：shells/go 的测试文件把多个外壳的真实模块测试放进同一个 Go 测试二进制，本组件跟 mdm-customer/mdm-product 虽然分在不同外壳（生产环境不会真的同进程），但测试编译阶段依然会把两份内容相同的生成代码一起链进去，在 protobuf 全局注册表里重复注册同一个文件/类型全名而 panic ——Go 的 module system 无法把两个不同 import path 的包合并成一份编译实例，replace 也解决不了（阶段四调研记录 04 §13 有完整推演+最小复现； erp-sales 已经先行完成同样的改动）。contracts/vendor/ 整个目录清空删除，import-scan 门禁新增放行 github.com/brickKit/<repo>/gen/... 这个形状。gRPC 调用行为、契约面、业务逻辑均无变化，import-scan/单测/ contract-check 全绿。
-                                     # v1.0.8：依赖版本号同步跟进 mdm/customer@1.0.6、mdm/product@1.0.7，无破坏性变更。
-    # v1.0.7：依赖版本号同步跟进 mdm/product@1.0.6（补 README 的"怎么
-    # 起来"/"怎么用"/"配置项"三节，纯文档修复），无破坏性变更。
-    # v1.0.6：make seed 加量到 11 条商机——1-5 号原样保留（dev.superuser，
-    # 只增不改），新增 6-10 号改用 dev.sales.east（华东分部）的真实 JWT
-    # 建，同样覆盖 OPEN 三阶段/WON/LOST，外加时间跨度回填（最近 2-25 天
-    # 逐步推进）；新增 11 号是刻意信用超限的 WON 商机（低信用客户+足够
-    # 大的 qty），赢单后 erp-sales 真实拒绝确认，真实建一条
-    # infra-workflow 异常待办——用真实业务失败路径给 infra-workflow 造
-    # 真实数据，不用直接 grpcurl 伪造 CreateTask（那会绕开该组件明确的
-    # 设计安全边界，见该组件 proto 注释）。真机验证：dev.sales.east 的
-    # token 查列表只看到 6-11 号，org 维数据权限第一次有真实商机样本能
-    # 登录体验；两个成功的 WON 商机（4/9 号）都拿到干净 CONFIRMED 订单，
-    # 归属分别正确带着"无部门"/"华东"；11 号的订单真实卡在 DRAFT，
-    # infra-workflow 真实多一条归属正确（华东）的异常待办。把
-    # infra/seed-data/clean.sh 里"清理 erp-sales 联带订单"那段逻辑挪进
-    # 本组件自己的 scripts/seed-clean.sh（反查真实订单 id 精确删除，
-    # 比原来按客户 id 模糊扫更精确）——这是删掉 infra/seed-data/ 的
-    # 前提条件，已满足。依赖版本号同步跟进 mdm/customer@1.0.5、
-    # mdm/product@1.0.5（种子数据丰富度批量整改）。无破坏性变更。
-    # v1.0.5：新增 scripts/seed.sh + make seed/seed-clean——种子商机归
-    # 本组件自己持有（总纲 SOP-W-7），Makefile 链式调用强依赖
-    # mdm-customer/mdm-product 与身份类例外 infra-iam-casdoor/
-    # infra-authz 各自的 seed，单独 make -C components/crm/opportunity
-    # seed 就能拿到完整数据。真机验证过标准配合"给库存的编排层顺序"
-    # 才能让 WON 商机自动转的订单真正 CONFIRMED（单独跑本组件的 seed，
-    # 没有编排层给库存的话，会走 erp-sales 真实的 TCC 补偿建异常待办，
-    # 这是设计上正确的行为，不是 bug）。纯本地开发工具，无行为/契约
-    # 变更。
-    # v1.0.4：docs/手册.md 的 TEST_PG_DSN 示例改指向 brickkit_test_db，
-    # 纯文档，无行为/契约变更。
-    # v1.0.3：补 ListOpportunities 的真实数据权限边界测试
-    # （TestListOpportunities_org维前缀过滤/_owner维过滤）——此前 repo
-    # 包只有 TestInScope 一个纯函数单元测试，验证的是判定谓词本身，
-    # ListOpportunities 真实的 SQL 过滤路径完全没有真实数据覆盖过。
-    # 纯补测试，无行为/契约变更。
-    # v1.0.2：弱依赖版本号同步跟进 mdm/customer@1.0.4、mdm/product@1.0.4
-    # （新增 make seed/seed-clean，无破坏性变更）。
-    # v1.0.1：补数据权限边界测试（TestGetOpportunity_范围外ErrForbidden/
-    # _owner精确命中即使部门不同）——be-acceptance@v0.3.5 新增
-    # data-scope-test-scan 门禁发现本组件此前零覆盖（总纲 SOP-W-8）。
-    # 纯补测试，无行为/契约变更。
-  description: 商机全生命周期、漏斗与赢单预测原始数据、赢单事件——阶段三第一个业务组件，CRM 与 ERP 零同步边仅事件握手
+  id: crm/opportunity
+  name: Opportunities
+  version: 2.0.0
+  description: Opportunity lifecycle, sales funnel and win-forecast data; publishes won, lost and stage-changed events.
+  repository: https://github.com/brickKit/crm-opportunity
   license: Apache-2.0
   vendor: brickKit
 
@@ -61,70 +15,50 @@ tags: [crm, opportunity, sales-funnel]
 artifacts:
   - type: api-contract
     format: protobuf
-    files:
-      - contracts/crm/opportunity/v1/opportunity.proto
-      - contracts/events/opportunity.events.json
+    files: [contracts/crm/opportunity/v1/opportunity.proto, contracts/events/opportunity.events.json]
   - type: api-contract
     format: openapi
     files: [contracts/opportunity.openapi.yaml]
-  - type: metadata                   # ← assembly.yaml 靠这一条随组件分发（§3.5）
+  - type: metadata
     files: [assembly.yaml]
 
-# 两条强依赖，都是只读枢纽的 BatchGet（设计计划 §5）：建商机/商机行时
-# 校验客户与产品存在、取展示快照——建档那一刻就要挡住脏数据。
-#
-# ⚠️ 明确不依赖 erp-sales/erp-inventory/erp-finance/infra-workflow——
-# §1.4 铁律：CRM 与 ERP 零同步边，仅事件握手（设计计划 §6）。附录 E
-# 那条"商机赢单→建订单"链路看起来像该建一条同步边，实际上正是这条
-# 铁律第一次被真正考验的地方，答案是事件握手不是同步调用。
 dependencies:
-  components:
-    - mdm/customer@1.0.10
-    - mdm/product@1.0.11
-  resources:
-    # ⚠️ engine 逐字参与匹配（设计书 §2.7.3.1）：这里写的词必须与
-    #    brickkit.yaml 的 resources[].engine 完全相同，平台不认别名。
-    - { kind: database, engine: postgresql }   # 产品名：不在替换范围
-    - { kind: mq,       engine: nats }         # 产品名：换 Kafka 是一次迁移，要让平台阻断
+  components: [mdm/customer@2.0.0, mdm/product@2.0.0]
 
 configSchema:
   type: object
   properties:
-    pgSchema:                        # ⚠️ 不能叫 databaseSchema，DATABASE_ 是保留前缀
-      type: string
-      default: crm_opportunity
-    iamJwksUrl:                      # JWT 本地验签的公钥来源。不对 IAM 建依赖边（决策 87）
-      type: string
-    authzBundleUrl:                  # 功能权限判定的 bundle 轮询地址，指向 infra-authz。不建依赖边
-      type: string
-    otelBaseUrl:                     # ⚠️ 不能叫 otelEndpoint，*_ENDPOINT 是保留后缀
-      type: string
-      default: ""                    # 空 → Blackhole Exporter，零成本（§7.5）
+    PG_HOST: {type: string}
+    PG_PORT: {type: string, default: "5432"}
+    PG_DATABASE: {type: string}
+    PG_USER: {type: string}
+    PG_PASSWORD: {type: string, secret: true}
+    PG_SCHEMA: {type: string, default: crm_opportunity}
+    NATS_URL: {type: string}
+    OTEL_BASE_URL: {type: string, default: ""}
+    AUTHZ_BUNDLE_URL: {type: string}
+    IAM_JWKS_URL: {type: string}
+  required: [PG_HOST, PG_DATABASE, PG_USER, PG_PASSWORD, NATS_URL, AUTHZ_BUNDLE_URL, IAM_JWKS_URL]
 
 deployment:
   type: container
-  image: brickenterprise/crm-opportunity:1.0.13
-  port: 8102                         # 端口册 registry/ports.tsv
+  build: {context: ., dockerfile: Dockerfile}
+  port: 8102
   extraPorts:
-    - { name: grpc, port: 9102 }     # → CRM_OPPORTUNITY_GRPC_ENDPOINT（值仍以 http:// 开头）
-  labels:                            # 平台只搬运，不解释键值。值必须是字符串
+    - {name: grpc, port: 9102}
+  labels:
     prometheus.io/scrape: "true"
-    # prometheus.io/port 原来写在这里——阶段四附加 Task 0.1 真机验证
-    # servedBy 时发现这个标签会跟同外壳其它成员的 prometheus.io/port 撞车
-    # 报错（每个组件的值天然不同，servedBy 的 labels 合并规则没有像 env
-    # 变量合并那样排除这类"语义上必然因组件而异"的标签，已反馈给 brickKit，
-    # 见装配仓库 docs/dev/brickKit反馈-servedBy的labels合并漏了排除规则.md）。
-    # 在 brickKit 修复或给出结论之前，暂时从这里删掉，只在合并后的外壳
-    # 自己的条目上保留一份——跟"合并后指标只能走一个共享抓取端口"这个
-    # 事实本来就一致，不是单纯绕过。
-    prometheus.io/path: "/metrics"
+    prometheus.io/path: /metrics
   resources:
-    requests: { cpu: "100m", memory: "128Mi" }  # 无 TCC 编排、无补偿链，比 erp-sales 轻
+    requests: {cpu: 100m, memory: 128Mi}
 
 migration:
-  command: ["./migrate", "up"]
+  command: [./migrate, up]
 
 healthCheck:
   type: http
-  path: /healthz                     # ⚠️ 只查本进程存活，严禁查库或查依赖组件（§12.3.6）
-  # startPeriodSeconds 不写：默认就是 60，Go 组件够用（§12.3.5）
+  path: /healthz
+
+local:
+  language: go
+  runCommand: [go, run, ./backend/cmd/server]

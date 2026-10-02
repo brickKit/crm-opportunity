@@ -11,23 +11,22 @@ import (
 	opportunityv1 "github.com/brickKit/crm-opportunity/gen/crm/opportunity/v1"
 	"google.golang.org/grpc"
 
-	"github.com/brickKit/crm-opportunity/backend/internal/consumer"
-	grpcapi "github.com/brickKit/crm-opportunity/backend/internal/grpc"
-	httpapi "github.com/brickKit/crm-opportunity/backend/internal/http"
-	"github.com/brickKit/crm-opportunity/backend/internal/partition"
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
-	"github.com/brickKit/crm-opportunity/backend/internal/service"
-	"github.com/brickKit/crm-opportunity/migrations"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/consumer"
+	grpcapi "github.com/brickKit/crm-opportunity/v2/backend/internal/grpc"
+	httpapi "github.com/brickKit/crm-opportunity/v2/backend/internal/http"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/partition"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/service"
 )
 
 // New 构造 crm-opportunity 模块。签名一个字都不许改（§12.5.1）。
 func New(ctx context.Context, rt *besdk.Runtime) (*besdk.Module, error) {
 	// ⚠️ 配置只从 rt.Config 来，模块里零 os.Getenv（§12.5.3、决策 110）。
-	schema := rt.Config.StringOr("pgSchema", "crm_opportunity")
+	schema := rt.Config.StringOr("PG_SCHEMA", "crm_opportunity")
 	role := schema + "_rw"
 
 	r := repo.New(rt.DB, role, schema)
-	svc := service.New(r, rt.Logger)
+	svc := service.New(r, rt.Config, rt.Logger)
 
 	// HTTP：engine 必须用 besdk.NewGinEngine，它已挂好 OTel / request-id /
 	// error→status / PII 脱敏日志 / RED 指标 / /healthz / /metrics。
@@ -42,8 +41,6 @@ func New(ctx context.Context, rt *besdk.Runtime) (*besdk.Module, error) {
 		RegisterGRPC: func(gs *grpc.Server) {
 			opportunityv1.RegisterOpportunityServiceServer(gs, grpcapi.New(svc))
 		},
-
-		Migrations: migrations.FS, // 合并态由外壳按拓扑顺序跑（§13.3 铁律五）
 
 		// 后台循环：Outbox 推送 + 周分区维护（event_outbox/event_inbox）+
 		// 消费事件。三个循环必须并发跑，不能顺序调用。⚠️ 本组件没有月

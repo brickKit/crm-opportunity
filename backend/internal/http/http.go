@@ -18,8 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	besdk "github.com/brickKit/be-sdk-go"
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
-	"github.com/brickKit/crm-opportunity/backend/internal/service"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/service"
 )
 
 // parseTimeRFC3339OrEmpty 把空字符串当"未传"（返回零值 time.Time，同

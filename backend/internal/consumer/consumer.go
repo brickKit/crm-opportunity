@@ -14,7 +14,7 @@ import (
 	besdk "github.com/brickKit/be-sdk-go"
 	"github.com/nats-io/nats.go"
 
-	"github.com/brickKit/crm-opportunity/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
 )
 
 func Start(ctx context.Context, db *sql.DB, role, schema string, nc *nats.Conn, logger *slog.Logger) error {

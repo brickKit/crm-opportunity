@@ -22,8 +22,8 @@ import (
 	productv1 "github.com/brickKit/mdm-product/gen/mdm/product/v1"
 )
 
-func dial(ctx context.Context, dep string) (*grpc.ClientConn, error) {
-	conn, err := besdk.UserClient(ctx, dep, "grpc")
+func dial(ctx context.Context, cfg besdk.Config, dep string) (*grpc.ClientConn, error) {
+	conn, err := besdk.UserClient(ctx, cfg, dep, "grpc")
 	if err != nil {
 		return nil, fmt.Errorf("拨号 %s: %w", dep, err)
 	}
@@ -31,8 +31,8 @@ func dial(ctx context.Context, dep string) (*grpc.ClientConn, error) {
 }
 
 // Customer 拨一条到 mdm-customer 的连接，返回类型化 stub。
-func Customer(ctx context.Context) (customerv1.CustomerServiceClient, func() error, error) {
-	conn, err := dial(ctx, "mdm/customer")
+func Customer(ctx context.Context, cfg besdk.Config) (customerv1.CustomerServiceClient, func() error, error) {
+	conn, err := dial(ctx, cfg, "mdm/customer")
 	if err != nil {
 		return nil, func() error { return nil }, err
 	}
@@ -40,8 +40,8 @@ func Customer(ctx context.Context) (customerv1.CustomerServiceClient, func() err
 }
 
 // Product 拨一条到 mdm-product 的连接，返回类型化 stub。
-func Product(ctx context.Context) (productv1.ProductServiceClient, func() error, error) {
-	conn, err := dial(ctx, "mdm/product")
+func Product(ctx context.Context, cfg besdk.Config) (productv1.ProductServiceClient, func() error, error) {
+	conn, err := dial(ctx, cfg, "mdm/product")
 	if err != nil {
 		return nil, func() error { return nil }, err
 	}
