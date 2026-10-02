@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -57,12 +58,14 @@ type Opportunity struct {
 	UpdatedAt         time.Time
 }
 
+// computeWeightedAmount = expected_amount × probability / 100，读时现算、不落库：
+// 落库的话，改了金额或概率，历史行的加权值就会和两个来源字段对不上。
 func computeWeightedAmount(expectedAmount string, probability int) string {
-	amount, err := strconv.ParseFloat(expectedAmount, 64)
-	if err != nil {
+	amount, ok := parseDecimal(expectedAmount)
+	if !ok {
 		return "0.00"
 	}
-	return strconv.FormatFloat(amount*float64(probability)/100, 'f', 2, 64)
+	return formatCents(amount.Mul(amount, big.NewRat(int64(probability), 100)))
 }
 
 func getOpportunityTx(ctx context.Context, tx *sql.Tx, id string) (*Opportunity, error) {

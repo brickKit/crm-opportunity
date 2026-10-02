@@ -129,15 +129,15 @@ type CreateOpportunityInput struct {
 }
 
 func computeSubtotal(qty, unitPrice string) (string, error) {
-	q, err := strconv.ParseFloat(qty, 64)
-	if err != nil {
+	q, ok := parseDecimal(qty)
+	if !ok {
 		return "", fmt.Errorf("%w: qty 不是合法数字：%q", ErrInvalidArgument, qty)
 	}
-	p, err := strconv.ParseFloat(unitPrice, 64)
-	if err != nil {
+	p, ok := parseDecimal(unitPrice)
+	if !ok {
 		return "", fmt.Errorf("%w: quoted_unit_price 不是合法数字：%q", ErrInvalidArgument, unitPrice)
 	}
-	return strconv.FormatFloat(q*p, 'f', 2, 64), nil
+	return formatCents(q.Mul(q, p)), nil
 }
 
 func (r *Repo) CreateOpportunity(ctx context.Context, in CreateOpportunityInput) (*Opportunity, error) {
