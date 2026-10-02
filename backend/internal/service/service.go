@@ -324,6 +324,19 @@ func (s *Service) GetStageHistory(ctx context.Context, id string) ([]repo.StageH
 	return s.repo.ListStageHistory(ctx, id)
 }
 
+// Funnel 统计调用者视角下 OPEN 商机在各阶段的分布。视角与 ListOpportunities
+// 完全一致：viewMine 时按本人是负责人，否则按本部门及下级。
+func (s *Service) Funnel(ctx context.Context, viewMine bool) ([]repo.FunnelStage, error) {
+	scope := besdk.ScopeOf(ctx)
+	in := repo.FunnelInput{ViewMine: viewMine}
+	if viewMine {
+		in.ScopeOwner = scope.Owner
+	} else {
+		in.ScopePrefix = scope.Prefix
+	}
+	return s.repo.Funnel(ctx, in)
+}
+
 func (s *Service) ListOpportunities(ctx context.Context, in repo.ListInput) (*repo.ListResult, error) {
 	scope := besdk.ScopeOf(ctx)
 	if in.ViewMine {

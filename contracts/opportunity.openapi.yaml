@@ -76,6 +76,28 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Opportunity" }
 
+  /opportunities/funnel:
+    get:
+      summary: 商机漏斗（仪表盘：各阶段 OPEN 商机的条数、预计金额与加权金额）
+      operationId: getOpportunityFunnel
+      description: 权限键 crm.opportunity.view。只统计 OPEN；每个阶段一行，按 sort_order，没有商机的阶段计 0。view 与 GET /opportunities 是同一个切换（mine = 本人负责的，省略或 dept = 本部门及下级），不是两者取并。加权金额是每条商机的加权金额四舍五入到分之后求和，与列表逐条显示的值相加一致。不加时间窗口。
+      parameters:
+        - name: view
+          in: query
+          schema: { type: string, enum: [mine, dept] }
+          description: "省略默认 dept（本部门及下级）；mine = 我的商机（owner_id 相等）"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stages:
+                    type: array
+                    items: { $ref: "#/components/schemas/FunnelStage" }
+
   /opportunities/{id}:
     get:
       summary: GetOpportunity
@@ -268,6 +290,15 @@ components:
           description: 这次流转设定的概率（阶段默认值或手工覆盖值）；为 null 的行写下时还没有记录概率
         changed_by: { type: string, description: 操作人的 sub }
         changed_at: { type: string, format: date-time }
+
+    FunnelStage:
+      type: object
+      properties:
+        stage_id: { type: string }
+        stage_name: { type: string }
+        count: { type: integer, description: 这个阶段上 OPEN 商机的条数 }
+        expected_amount: { type: string, description: 预计金额合计，十进制字符串，两位小数 }
+        weighted_amount: { type: string, description: 加权金额合计（每条先四舍五入到分再求和），十进制字符串，两位小数 }
 
     IdempotentRequest:
       type: object

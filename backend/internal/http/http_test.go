@@ -71,6 +71,7 @@ func engineAs(svc *service.Service, claims besdk.Claims) *gin.Engine {
 	}
 	g := eng.Group("/crm/opportunity", asCaller)
 	g.GET("/opportunities", listOpportunitiesHandler(svc))
+	g.GET("/opportunities/funnel", funnelHandler(svc))
 	g.GET("/opportunities/:id", getOpportunityHandler(svc))
 	g.PATCH("/opportunities/:id", updateOpportunityHandler(svc))
 	g.GET("/opportunities/:id/stage-history", stageHistoryHandler(svc))

@@ -36,6 +36,7 @@ func RegisterRoutes(eng *gin.Engine, svc *service.Service) {
 	g := eng.Group("/crm/opportunity")
 	besdk.POST(g, "/opportunities", "crm.opportunity.edit", createOpportunityHandler(svc))
 	besdk.GET(g, "/opportunities", "crm.opportunity.view", listOpportunitiesHandler(svc))
+	besdk.GET(g, "/opportunities/funnel", "crm.opportunity.view", funnelHandler(svc))
 	besdk.GET(g, "/opportunities/:id", "crm.opportunity.view", getOpportunityHandler(svc))
 	besdk.GET(g, "/opportunities/:id/stage-history", "crm.opportunity.view", stageHistoryHandler(svc))
 	besdk.PATCH(g, "/opportunities/:id", "crm.opportunity.edit", updateOpportunityHandler(svc))
@@ -292,5 +293,25 @@ func stageHistoryHandler(svc *service.Service) gin.HandlerFunc {
 			history = append(history, row)
 		}
 		c.JSON(http.StatusOK, gin.H{"history": history})
+	}
+}
+
+// funnelHandler：GET /opportunities/funnel。?view=mine|dept 与列表是同一个切换
+// （省略时 dept）。每个阶段一行，按 sort_order；没有商机的阶段计 0。
+func funnelHandler(svc *service.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		stages, err := svc.Funnel(c.Request.Context(), c.Query("view") == "mine")
+		if err != nil {
+			_ = c.Error(service.ToStatus(err))
+			return
+		}
+		dtos := make([]gin.H, 0, len(stages))
+		for _, s := range stages {
+			dtos = append(dtos, gin.H{
+				"stage_id": s.StageID, "stage_name": s.StageName, "count": s.Count,
+				"expected_amount": s.ExpectedAmount, "weighted_amount": s.WeightedAmount,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"stages": dtos})
 	}
 }
