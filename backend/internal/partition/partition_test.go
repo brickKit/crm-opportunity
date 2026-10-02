@@ -8,6 +8,8 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 func TestMondayOf(t *testing.T) {
@@ -55,16 +57,16 @@ func TestEnsureAllWeekly_幂等且与迁移分区命名一致(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	if err := ensureAllWeekly(ctx, db, "crm_opportunity_rw", "crm_opportunity"); err != nil {
+	if err := ensureAllWeekly(ctx, db, testdb.Role, testdb.Schema); err != nil {
 		t.Fatalf("第一次运行失败: %v", err)
 	}
 	// 幂等：第二次运行不该报"分区已存在"之类的错误。
-	if err := ensureAllWeekly(ctx, db, "crm_opportunity_rw", "crm_opportunity"); err != nil {
+	if err := ensureAllWeekly(ctx, db, testdb.Role, testdb.Schema); err != nil {
 		t.Fatalf("第二次运行（应该幂等）失败: %v", err)
 	}
 
 	futureWeek := mondayOf(time.Now().UTC()).AddDate(0, 0, 7*lookAheadWeeks)
-	expectedName := "crm_opportunity.event_outbox_" + futureWeek.Format("2006_01_02")
+	expectedName := testdb.Schema + ".event_outbox_" + futureWeek.Format("2006_01_02")
 	var exists bool
 	if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, expectedName).Scan(&exists); err != nil {
 		t.Fatal(err)

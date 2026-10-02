@@ -9,6 +9,7 @@ import (
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // 漏斗按调用者的数据范围统计，视角与列表完全一致：view=mine 只数本人负责的，
@@ -54,7 +55,7 @@ func byStage(t *testing.T, got []repo.FunnelStage) map[string]repo.FunnelStage {
 
 func TestFunnel_mine与dept两个用户看到不同的数(t *testing.T) {
 	db := testDB(t)
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	f := &funnelFixture{r: r, svc: New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())}
 	stages, err := r.ListStages(context.Background())
 	if err != nil {

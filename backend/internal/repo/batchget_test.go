@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"testing"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // TestBatchGetOpportunities_缺失的id进missing不报错：契约写明 BatchGet 只返回
@@ -11,7 +13,7 @@ import (
 func TestBatchGetOpportunities_缺失的id进missing不报错(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	found, missing, err := r.BatchGetOpportunities(ctx, []string{opp.ID, "999999999999"})

@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"testing"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // TestListStageHistory_按时间先后返回每次流转：从哪到哪、这次设定的概率、
@@ -10,7 +12,7 @@ import (
 func TestListStageHistory_按时间先后返回每次流转(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	stages, err := r.ListStages(ctx)

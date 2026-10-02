@@ -39,9 +39,9 @@ test:  ## L1–L3 测试。需要 TEST_PG_DSN（指向 brickkit_test_db）；TES
 	@test -n "$$TEST_PG_DSN" || { echo "✗ 没设 TEST_PG_DSN：连库测试会全部 SKIP 而显示 ok（设法见 AGENTS.md 的 Build and test）"; exit 1; }
 	go test ./... -race -count=1
 
-migrate-idempotent:  ## 同一份迁移连跑两次都成功。需要 PG_HOST PG_PORT PG_DATABASE PG_USER PG_PASSWORD PG_SCHEMA（以 crm_opportunity_rw 登录）
-	@# 例：PG_HOST=localhost PG_PORT=5432 PG_DATABASE=brickkit_test_db PG_USER=crm_opportunity_rw
-	@#     PG_PASSWORD=… PG_SCHEMA=crm_opportunity make migrate-idempotent
+migrate-idempotent:  ## 同一份迁移连跑两次都成功。需要 PG_HOST PG_PORT PG_DATABASE PG_USER PG_PASSWORD PG_SCHEMA（以组件的登录角色 PG_USER 运行，建出的表归它）
+	@# 例（本项目的身份见 assembly.yaml 的 data:）：PG_HOST=localhost PG_PORT=5432 PG_DATABASE=brickkit_test_db
+	@#     PG_USER=<登录角色> PG_PASSWORD=… PG_SCHEMA=<schema> make migrate-idempotent
 	@mkdir -p build && go build -o build/migrate-probe ./backend/cmd/migrate
 	@build/migrate-probe up && build/migrate-probe up && echo "✓ 迁移幂等"
 
@@ -79,7 +79,7 @@ import-scan:  ## 只 import SDK 与自己；别的组件只能用它发布的 ge
 	   echo "✗ import 了别的组件的代码："; echo "$$bad"; exit 1; fi; \
 	 echo "✓ 无组件间 import"
 
-module-check:  ## 模块能被合进外壳：入口签名对、零 os.Getenv、零进程级初始化、栈合规
+module-check:  ## 模块能被合进外壳：入口签名对、零 os.Getenv、零进程级初始化、栈合规、不 import 测试身份
 	@# 只扫 backend/module 与 backend/internal（会被合进外壳的部分）；backend/cmd 是
 	@# 独立运行的装配代码，不在范围内。先去掉行内 // 注释再 grep，免得解释"为什么
 	@# 不许 log.Fatal"的注释把自己判成违规；_test.go 不扫（测试自己开库是测试设施）。
@@ -103,6 +103,10 @@ module-check:  ## 模块能被合进外壳：入口签名对、零 os.Getenv、�
 	 bad="$$(printf '%s\n' "$$deps" | awk '/labstack\/echo|gofiber\/fiber|go-chi\/chi|jinzhu\/gorm|gorm\.io|lib\/pq/')"; \
 	 if [ -n "$$bad" ]; then \
 	   echo "✗ 用了锁定栈之外的库："; echo "$$bad"; exit 1; fi
+	@# backend/testdb 读进程环境，只给测试用；生产代码 import 了它，测试身份就进了镜像。
+	@deps="$$(go list -deps ./backend/module/... ./backend/internal/... ./backend/cmd/...)" || { echo "✗ go list -deps 失败"; exit 1; }; \
+	 if printf '%s\n' "$$deps" | grep -qx 'github.com/brickKit/$(REPO)/v$(MAJOR)/backend/testdb'; then \
+	   echo "✗ 生产代码 import 了 backend/testdb（只许测试用）"; exit 1; fi
 	@echo "✓ 入口签名对、零 os.Getenv、零进程级初始化、栈合规"
 
 docs-check:  ## 清单与文档的严格 lint（= 项目根 make docs-check ID=$(ID)）

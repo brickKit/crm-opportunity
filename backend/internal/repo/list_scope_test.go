@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"testing"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // TestListOpportunities_org维前缀过滤 与 TestListOpportunities_owner维过滤
@@ -38,7 +40,7 @@ func createOppWithScope(t *testing.T, ctx context.Context, r *Repo, deptPath, ow
 func TestListOpportunities_org维前缀过滤(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 
 	east := createOppWithScope(t, ctx, r, "/1/12/", "u_"+uniqueSuffix("east-rep"))
 	south := createOppWithScope(t, ctx, r, "/1/34/", "u_"+uniqueSuffix("south-rep"))
@@ -68,7 +70,7 @@ func TestListOpportunities_org维前缀过滤(t *testing.T) {
 func TestListOpportunities_owner维过滤(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	ownerA := "u_" + uniqueSuffix("owner-a")
 	ownerB := "u_" + uniqueSuffix("owner-b")
 

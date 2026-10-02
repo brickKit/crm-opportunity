@@ -10,6 +10,8 @@ import (
 	"time"
 
 	besdk "github.com/brickKit/be-sdk-go"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // GET /opportunities 的 created_after / created_before（契约声明的查询参数）：
@@ -58,7 +60,7 @@ func backdate(t *testing.T, id string, d time.Duration) {
 	}
 	defer db.Close()
 	if _, err := db.ExecContext(context.Background(),
-		`UPDATE crm_opportunity.opportunities SET created_at = $1 WHERE id = $2`, time.Now().Add(-d), id); err != nil {
+		testdb.Q(`UPDATE {schema}.opportunities SET created_at = $1 WHERE id = $2`), time.Now().Add(-d), id); err != nil {
 		t.Fatal(err)
 	}
 }

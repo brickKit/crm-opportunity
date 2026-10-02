@@ -20,6 +20,8 @@ import (
 	"github.com/nats-io/nats.go"
 
 	besdk "github.com/brickKit/be-sdk-go"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 func testDB(t *testing.T) *sql.DB {
@@ -71,7 +73,7 @@ func createTestOpportunity(t *testing.T, ctx context.Context, r *Repo) *Opportun
 func TestCreateOpportunity_真实建档(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 
 	opp := createTestOpportunity(t, ctx, r)
 	if opp.Status != StatusOpen {
@@ -99,7 +101,7 @@ func TestCreateOpportunity_真实建档(t *testing.T) {
 func TestCreateOpportunity_重复idempotencyKey幂等返回同一条(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 
 	key := uniqueSuffix("test-idem-create")
 	in := CreateOpportunityInput{
@@ -127,7 +129,7 @@ func TestCreateOpportunity_重复idempotencyKey幂等返回同一条(t *testing.
 func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	nc, err := nats.Connect(natsURLForTest(t))
@@ -162,9 +164,9 @@ func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *te
 	// TEST_PG_DSN 用管理凭据连接（同 erp-sales 既有测试的判据），跨
 	// schema 直接查不需要 SET LOCAL ROLE。
 	var outboxStatus, payloadRaw string
-	if err := db.QueryRowContext(ctx, `
-		SELECT status, payload::text FROM crm_opportunity.event_outbox
-		WHERE subject = 'crm.opportunity.won.v1' AND aggregate_id = $1`, opp.ID,
+	if err := db.QueryRowContext(ctx, testdb.Q(`
+		SELECT status, payload::text FROM {schema}.event_outbox
+		WHERE subject = 'crm.opportunity.won.v1' AND aggregate_id = $1`), opp.ID,
 	).Scan(&outboxStatus, &payloadRaw); err != nil {
 		t.Fatalf("查 event_outbox 失败: %v", err)
 	}
@@ -192,7 +194,7 @@ func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *te
 	// 真跑 Outbox 推送循环，断言事件真的到达 NATS——不是只看表里有一行。
 	pumpCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	go func() { _ = besdk.StartOutboxPump(pumpCtx, db, "crm_opportunity", nc, slog.Default()) }()
+	go func() { _ = besdk.StartOutboxPump(pumpCtx, db, testdb.Schema, nc, slog.Default()) }()
 
 	// ⚠️ 这个 subject 是全部商机共用的，Postgres 里可能还躺着其它测试
 	// （如 TestMarkWon_已终态不能重复赢单，它调用一次成功的 MarkWon 但
@@ -221,7 +223,7 @@ func TestMarkWon_真实转WON且Outbox记录且事件真的发布到总线(t *te
 func TestMarkWon_已终态不能重复赢单(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	if _, err := r.MarkWon(ctx, MarkWonInput{IdempotencyKey: uniqueSuffix("win-1"), ID: opp.ID}); err != nil {
@@ -241,7 +243,7 @@ func TestMarkWon_已终态不能重复赢单(t *testing.T) {
 func TestMarkLost_真实转LOST且发布事件(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	lost, err := r.MarkLost(ctx, MarkLostInput{IdempotencyKey: uniqueSuffix("test-lose"), ID: opp.ID, Reason: "价格谈不拢"})
@@ -256,9 +258,9 @@ func TestMarkLost_真实转LOST且发布事件(t *testing.T) {
 	}
 
 	var count int
-	if err := db.QueryRowContext(ctx, `
-		SELECT count(*) FROM crm_opportunity.event_outbox
-		WHERE subject = 'crm.opportunity.lost.v1' AND aggregate_id = $1`, opp.ID).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, testdb.Q(`
+		SELECT count(*) FROM {schema}.event_outbox
+		WHERE subject = 'crm.opportunity.lost.v1' AND aggregate_id = $1`), opp.ID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -271,7 +273,7 @@ func TestMarkLost_真实转LOST且发布事件(t *testing.T) {
 func TestMarkLost_必须填原因(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	_, err := r.MarkLost(ctx, MarkLostInput{IdempotencyKey: uniqueSuffix("test-lose-noreason"), ID: opp.ID, Reason: ""})
@@ -286,7 +288,7 @@ func TestMarkLost_必须填原因(t *testing.T) {
 func TestChangeStage_真实写历史且发布事件(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	stages, err := r.ListStages(ctx)
@@ -317,8 +319,8 @@ func TestChangeStage_真实写历史且发布事件(t *testing.T) {
 	}
 
 	var historyCount int
-	if err := db.QueryRowContext(ctx, `
-		SELECT count(*) FROM crm_opportunity.opportunity_stage_history WHERE opportunity_id = $1`,
+	if err := db.QueryRowContext(ctx, testdb.Q(`
+		SELECT count(*) FROM {schema}.opportunity_stage_history WHERE opportunity_id = $1`),
 		opp.ID).Scan(&historyCount); err != nil {
 		t.Fatal(err)
 	}
@@ -327,9 +329,9 @@ func TestChangeStage_真实写历史且发布事件(t *testing.T) {
 	}
 
 	var eventCount int
-	if err := db.QueryRowContext(ctx, `
-		SELECT count(*) FROM crm_opportunity.event_outbox
-		WHERE subject = 'crm.opportunity.stage_changed.v1' AND aggregate_id = $1`, opp.ID).Scan(&eventCount); err != nil {
+	if err := db.QueryRowContext(ctx, testdb.Q(`
+		SELECT count(*) FROM {schema}.event_outbox
+		WHERE subject = 'crm.opportunity.stage_changed.v1' AND aggregate_id = $1`), opp.ID).Scan(&eventCount); err != nil {
 		t.Fatal(err)
 	}
 	if eventCount != 1 {
@@ -341,7 +343,7 @@ func TestChangeStage_真实写历史且发布事件(t *testing.T) {
 func TestChangeStage_probability手工覆盖(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	stages, err := r.ListStages(ctx)
@@ -366,7 +368,7 @@ func TestChangeStage_probability手工覆盖(t *testing.T) {
 func TestUpdateOpportunity_版本冲突(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	_, err := r.UpdateOpportunity(ctx, UpdateOpportunityInput{
@@ -383,7 +385,7 @@ func TestUpdateOpportunity_版本冲突(t *testing.T) {
 func TestUpdateOpportunity_真实更新(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	updated, err := r.UpdateOpportunity(ctx, UpdateOpportunityInput{

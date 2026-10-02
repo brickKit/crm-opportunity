@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strconv"
 	"testing"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // 金额、数量、概率的入参必须在写库之前严格校验：PostgreSQL 的 NUMERIC 认
@@ -19,7 +21,7 @@ var badAmounts = []string{"NaN", "nan", "Inf", "Infinity", "-Infinity", "1e3", "
 func TestCreateOpportunity_金额不是普通十进制时拒绝且不落库(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 
 	base := func() CreateOpportunityInput {
 		return CreateOpportunityInput{
@@ -78,7 +80,7 @@ func TestCreateOpportunity_金额不是普通十进制时拒绝且不落库(t *t
 func TestUpdateOpportunity_金额不是普通十进制时拒绝且不改库(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 
 	for _, bad := range badAmounts {
@@ -103,7 +105,7 @@ func TestUpdateOpportunity_金额不是普通十进制时拒绝且不改库(t *t
 func TestChangeStage_概率越界时拒绝(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	r := New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := New(db, testdb.Role, testdb.Schema)
 	opp := createTestOpportunity(t, ctx, r)
 	stages, err := r.ListStages(ctx)
 	if err != nil {

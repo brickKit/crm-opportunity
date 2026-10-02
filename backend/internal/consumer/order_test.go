@@ -14,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // 商机 order_id 的回填：erp/sales 在 sales.order.created.v1 里带
@@ -67,11 +68,11 @@ func startOrderConsumer(t *testing.T) *orderFixture {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = start(ctx, db, "crm_opportunity_rw", "crm_opportunity", nc, logger, s) }()
+	go func() { _ = start(ctx, db, testdb.Role, testdb.Schema, nc, logger, s) }()
 	// NATS core 订阅是异步注册的，早于注册完成的消息直接丢掉、不重投。
 	time.Sleep(150 * time.Millisecond)
 
-	return &orderFixture{db: db, nc: nc, r: repo.New(db, "crm_opportunity_rw", "crm_opportunity"), subject: s.OrderCreated, logs: logs}
+	return &orderFixture{db: db, nc: nc, r: repo.New(db, testdb.Role, testdb.Schema), subject: s.OrderCreated, logs: logs}
 }
 
 func (f *orderFixture) wonOpportunity(t *testing.T) *repo.Opportunity {
@@ -111,8 +112,8 @@ func (f *orderFixture) waitInbox(t *testing.T, orderID string, version int64) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		var n int
-		if err := f.db.QueryRow(`SELECT count(*) FROM crm_opportunity.event_inbox
-			WHERE subject = $1 AND aggregate_id = $2 AND version = $3`, f.subject, orderID, version).Scan(&n); err != nil {
+		if err := f.db.QueryRow(testdb.Q(`SELECT count(*) FROM {schema}.event_inbox
+			WHERE subject = $1 AND aggregate_id = $2 AND version = $3`), f.subject, orderID, version).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n == 1 {

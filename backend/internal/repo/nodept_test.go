@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // dept 视角下 ScopePrefix 为空只可能是调用方漏填了（SDK 保证调用者的 Prefix
@@ -11,7 +13,7 @@ import (
 // "不限"——`LIKE '' || '%'` 匹配全部，漏填一次就是所有人看到所有商机。
 
 func TestListOpportunities_dept视图ScopePrefix留空报InvalidArgument(t *testing.T) {
-	r := New(testDB(t), "crm_opportunity_rw", "crm_opportunity")
+	r := New(testDB(t), testdb.Role, testdb.Schema)
 	createOppWithScope(t, context.Background(), r, "/1/12/", "u_"+uniqueSuffix("east"))
 
 	res, err := r.ListOpportunities(context.Background(), ListInput{PageSize: 200})
@@ -25,7 +27,7 @@ func TestListOpportunities_dept视图ScopePrefix留空报InvalidArgument(t *test
 }
 
 func TestFunnel_dept视图ScopePrefix留空报InvalidArgument(t *testing.T) {
-	r := New(testDB(t), "crm_opportunity_rw", "crm_opportunity")
+	r := New(testDB(t), testdb.Role, testdb.Schema)
 	createOppWithScope(t, context.Background(), r, "/1/12/", "u_"+uniqueSuffix("east"))
 
 	got, err := r.Funnel(context.Background(), FunnelInput{})
@@ -36,7 +38,7 @@ func TestFunnel_dept视图ScopePrefix留空报InvalidArgument(t *testing.T) {
 
 // mine 视角不看 ScopePrefix：留空是正常的，不报错。
 func TestListOpportunities_mine视图不需要ScopePrefix(t *testing.T) {
-	r := New(testDB(t), "crm_opportunity_rw", "crm_opportunity")
+	r := New(testDB(t), testdb.Role, testdb.Schema)
 	owner := "u_" + uniqueSuffix("mine-only")
 	opp := createOppWithScope(t, context.Background(), r, "", owner)
 

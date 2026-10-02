@@ -8,6 +8,7 @@ import (
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // 调用方自己能纠正的错误（参数不合法、找不到、版本过期、终态不能再流转）不是
@@ -19,7 +20,7 @@ func TestUpdateOpportunity_调用方错误不记ERROR(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 	var logs bytes.Buffer
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.New(slog.NewTextHandler(&logs, nil)))
 
 	opp := createOpportunityWithScope(t, ctx, r, "12", "/1/12/", "u_e2e_test_owner")

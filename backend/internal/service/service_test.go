@@ -25,6 +25,7 @@ import (
 	besdk "github.com/brickKit/be-sdk-go"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 
 	customerv1 "github.com/brickKit/mdm-customer/gen/mdm/customer/v1"
 	productv1 "github.com/brickKit/mdm-product/gen/mdm/product/v1"
@@ -128,7 +129,7 @@ func TestCreateOpportunity_真实校验客户与产品并取展示快照(t *test
 	db := testDB(t)
 	ctx := e2eTestCtx()
 
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	customerID, customerName := createRealCustomer(t, ctx)
@@ -183,7 +184,7 @@ func createOpportunityWithScope(t *testing.T, ctx context.Context, r *repo.Repo,
 func TestGetOpportunity_范围外与不存在一样是NotFound(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_someone_else")
@@ -203,7 +204,7 @@ func TestGetOpportunity_范围外与不存在一样是NotFound(t *testing.T) {
 func TestGetOpportunity_owner精确命中即使部门不同(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	opp := createOpportunityWithScope(t, ctx, r, "99", "/9/99/", "u_e2e_test_owner")
@@ -224,7 +225,7 @@ func TestCreateOpportunity_真实客户不存在时拒绝(t *testing.T) {
 	db := testDB(t)
 	ctx := e2eTestCtx()
 
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	productID, _, _ := createRealProduct(t, ctx)

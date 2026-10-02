@@ -14,6 +14,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/nats-io/nats.go"
+
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 func testDB(t *testing.T) *sql.DB {
@@ -79,7 +81,7 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 		OrderCreated:    fmt.Sprintf("test.sales.order.created.v1.%d", stamp),
 	}
 	errCh := make(chan error, 1)
-	go func() { errCh <- start(ctx, db, "crm_opportunity_rw", "crm_opportunity", nc, nil, s) }()
+	go func() { errCh <- start(ctx, db, testdb.Role, testdb.Schema, nc, nil, s) }()
 	// NATS core pub/sub 没有队列：订阅是异步注册的，发布早于订阅注册完成
 	// 那条消息就直接丢了，不会重投。start 对每个 subject 各起一个 goroutine
 	// 调 besdk.Consume，给它们一点真实注册时间。
@@ -93,7 +95,7 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 	var name string
 	for time.Now().Before(deadline) {
 		err := db.QueryRowContext(context.Background(),
-			`SELECT name FROM crm_opportunity.customer_snapshots WHERE customer_id = $1`, customerID).Scan(&name)
+			testdb.Q(`SELECT name FROM {schema}.customer_snapshots WHERE customer_id = $1`), customerID).Scan(&name)
 		if err == nil {
 			break
 		}
@@ -108,7 +110,7 @@ func TestConsumer_客户事件维护展示快照(t *testing.T) {
 		`{"id":"`+customerID+`","name":"不该生效的旧版本名字"}`)
 	time.Sleep(500 * time.Millisecond)
 	if err := db.QueryRowContext(context.Background(),
-		`SELECT name FROM crm_opportunity.customer_snapshots WHERE customer_id = $1`, customerID).Scan(&name); err != nil {
+		testdb.Q(`SELECT name FROM {schema}.customer_snapshots WHERE customer_id = $1`), customerID).Scan(&name); err != nil {
 		t.Fatal(err)
 	}
 	if name != "真实消费测试客户" {

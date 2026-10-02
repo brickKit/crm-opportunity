@@ -11,6 +11,7 @@ import (
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // 没有部门的人：token 里 dept_path 为空（新账号的默认状态，还没被分到任何部门）。
@@ -24,7 +25,7 @@ func noDeptCtx(sub string) context.Context {
 
 func scopeTestService(t *testing.T) (*repo.Repo, *Service) {
 	t.Helper()
-	r := repo.New(testDB(t), "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(testDB(t), testdb.Role, testdb.Schema)
 	return r, New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 }
 

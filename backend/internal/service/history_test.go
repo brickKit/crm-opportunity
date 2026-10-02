@@ -10,13 +10,14 @@ import (
 
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // stage-history 的数据范围：与单条读取同样的可见性（部门前缀或本人是负责人），
 // 看不到的商机回 NotFound——与不存在的商机答得一样，不泄露哪些 id 存在。
 func TestGetStageHistory_范围外与不存在一样是NotFound(t *testing.T) {
 	db := testDB(t)
-	r := repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	r := repo.New(db, testdb.Role, testdb.Schema)
 	svc := New(r, client.New(e2eConfig(), client.DefaultTimeout), slog.Default())
 
 	east := besdk.ContextWithClaims(context.Background(), besdk.Claims{Sub: "u_" + uniqueSuffix("east"), DeptPath: "/1/12/"})

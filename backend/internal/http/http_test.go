@@ -22,6 +22,7 @@ import (
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/client"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/repo"
 	"github.com/brickKit/crm-opportunity/v2/backend/internal/service"
+	"github.com/brickKit/crm-opportunity/v2/backend/testdb"
 )
 
 // REST 层测试：用 besdk.NewGinEngine 造真实的 engine（错误到状态码的映射、
@@ -48,7 +49,7 @@ func testRepo(t *testing.T) *repo.Repo {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return repo.New(db, "crm_opportunity_rw", "crm_opportunity")
+	return repo.New(db, testdb.Role, testdb.Schema)
 }
 
 func testService(r *repo.Repo) *service.Service {
