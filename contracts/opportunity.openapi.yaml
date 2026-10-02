@@ -126,6 +126,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Opportunity" }
+        "409":
+          description: version 与当前值不一致（别人先改过），重新读取后再提交
 
   /opportunities/{id}/stage-history:
     get:

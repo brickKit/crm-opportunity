@@ -170,3 +170,25 @@ func TestStageHistory_REST形状与范围外404(t *testing.T) {
 		t.Fatalf("别的部门、不是负责人：期望 404，实际 %d：%v", code, body)
 	}
 }
+
+// PATCH /opportunities/{id} 带过期的 version：409（契约声明的版本冲突），库里不变。
+func TestUpdateOpportunity_REST版本过期答409(t *testing.T) {
+	r := testRepo(t)
+	owner := "u_" + uniqueSuffix("conflict-owner")
+	opp := createOpp(t, r, "/1/12/", owner, "100.00")
+	eng := engineAs(testService(r), besdk.Claims{Sub: owner, DeptPath: "/1/12/"})
+
+	body := fmt.Sprintf(`{"idempotency_key":%q,"version":%d,"name":"改名","expected_amount":"200.00","owner_id":%q}`,
+		uniqueSuffix("conflict"), opp.Version+1, owner)
+	code, out := do(t, eng, http.MethodPatch, "/crm/opportunity/opportunities/"+opp.ID, body)
+	if code != http.StatusConflict {
+		t.Fatalf("期望 409，实际 %d：%v", code, out)
+	}
+	got, err := r.GetOpportunity(context.Background(), opp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != opp.Version || got.ExpectedAmount != "100.00" {
+		t.Fatalf("版本冲突不该改库：%+v", got)
+	}
+}
