@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brickkit.dev/crm-opportunity/events/crm.opportunity.changed.v1.schema.json",
+  "title": "crm.opportunity.changed.v1",
+  "description": "An opportunity's complete current state (a full-state event; overwrite by version); the record ID is its UUIDv7. The stage history, the quote requests and the linked sales documents are not here: read the opportunity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "number",
+    "legal_entity_id",
+    "customer",
+    "name",
+    "currency",
+    "amount",
+    "expected_close_date",
+    "owner_id",
+    "stage",
+    "probability",
+    "stage_before_close",
+    "close_reason",
+    "closed_at",
+    "won_amount",
+    "lines",
+    "version",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "number": {
+      "type": "string",
+      "description": "OP-<legal entity code>-<year>-<six digits>; gaps allowed"
+    },
+    "legal_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "customer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "partner_id",
+        "name"
+      ],
+      "properties": {
+        "partner_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "amount": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "description": "a non-negative decimal string in the currency's minor units"
+    },
+    "expected_close_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "the owner's platform principal (a dimension of the data scope)"
+    },
+    "stage": {
+      "enum": [
+        "qualification",
+        "needs_analysis",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost"
+      ]
+    },
+    "probability": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "stage_before_close": {
+      "oneOf": [
+        {
+          "enum": [
+            "qualification",
+            "needs_analysis",
+            "proposal",
+            "negotiation"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the open stage a won or lost opportunity reopens to"
+    },
+    "close_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "closed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "won_amount": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "a non-negative decimal string in the currency's minor units"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "in the opportunity's currency; null unless won"
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "description": "greater than zero"
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "description": "products suggested for a quotation; not checked here"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

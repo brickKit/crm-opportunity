@@ -1,0 +1,354 @@
+openapi: 3.1.0
+info:
+  title: crm/opportunity user surface
+  version: 3.0.0
+  description: >-
+    Opportunities, their stages, quote requests to erp/sales and the funnel, for people and the front end. Every route
+    needs a platform access token and the operation in x-operation; what the caller may not see answers 404. The data
+    scope has two dimensions: the legal entity and the owner. Errors are application/problem+json with a reason
+    (STATE_CONFLICT, STAGE_ORDER, WON_AMOUNT_LOCKED, CUSTOMER_NOT_ELIGIBLE, REFERENCE_INVALID, DEPENDENCY_UNAVAILABLE,
+    VERSION_CONFLICT, VALIDATION_FAILED). Lists page by cursor only (protocol 14). Amounts are decimal strings in the
+    opportunity's currency. Creating and requesting a quote need an Idempotency-Key header. The rules (OP01-OP08) are in
+    the component's docs/design.md.
+paths:
+  /api/opportunity/opportunities:
+    get:
+      operationId: listOpportunities
+      x-operation: crm.opportunity.read
+      parameters:
+        - {name: legal_entity_id, in: query, schema: {type: string, format: uuid}}
+        - {name: customer_id, in: query, schema: {type: string, format: uuid}}
+        - {name: stage, in: query, schema: {$ref: '#/components/schemas/Stage'}}
+        - {name: owner_id, in: query, schema: {type: string, format: uuid}}
+        - {name: close_from, in: query, schema: {type: string, format: date}, description: 'expected close date on or after'}
+        - {name: close_to, in: query, schema: {type: string, format: date}, description: 'expected close date on or before'}
+        - {name: q, in: query, schema: {type: string}, description: 'the number or words of the name'}
+        - $ref: '#/components/parameters/cursor'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: one page, the newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [opportunities, next_cursor]
+                properties:
+                  opportunities: {type: array, items: {$ref: '#/components/schemas/Opportunity'}}
+                  next_cursor: {type: string}
+        default: {$ref: '#/components/responses/problem'}
+    post:
+      operationId: createOpportunity
+      x-operation: crm.opportunity.edit
+      summary: Create (OP01); an owner other than the caller needs crm.opportunity.assign as well
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [legal_entity_id, customer_id, name]
+              properties:
+                legal_entity_id: {type: string, format: uuid}
+                customer_id: {type: string, format: uuid}
+                name: {type: string, minLength: 1, maxLength: 200}
+                currency: {type: string, pattern: '^[A-Z]{3}$', description: 'the legal entity''s base currency when left out'}
+                amount: {$ref: '#/components/schemas/Amount'}
+                expected_close_date: {type: [string, 'null'], format: date}
+                owner_id: {type: string, format: uuid, description: 'the caller when left out'}
+                stage: {$ref: '#/components/schemas/OpenStage'}
+                probability: {$ref: '#/components/schemas/Probability'}
+                lines: {$ref: '#/components/schemas/Lines'}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      operationId: getOpportunity
+      x-operation: crm.opportunity.read
+      summary: The opportunity with its stage history, quote requests and linked sales documents
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+    patch:
+      operationId: updateOpportunity
+      x-operation: crm.opportunity.edit
+      summary: Change the given fields by version (OP02); not the legal entity, the stage or the owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: {type: integer}
+                name: {type: string, minLength: 1, maxLength: 200}
+                customer_id: {type: string, format: uuid}
+                currency: {type: string, pattern: '^[A-Z]{3}$'}
+                amount: {$ref: '#/components/schemas/Amount'}
+                expected_close_date: {type: [string, 'null'], format: date}
+                probability: {$ref: '#/components/schemas/Probability'}
+                lines: {$ref: '#/components/schemas/Lines'}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/advance:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: advanceOpportunity
+      x-operation: crm.opportunity.edit
+      summary: Move to a later open stage, past the ones between if need be (OP03)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, stage]
+              properties:
+                version: {type: integer}
+                stage: {$ref: '#/components/schemas/OpenStage'}
+                probability: {$ref: '#/components/schemas/Probability'}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/revert:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: revertOpportunity
+      x-operation: crm.opportunity.edit
+      summary: Move back to an earlier stage, with a reason (OP03)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, stage, reason]
+              properties:
+                version: {type: integer}
+                stage: {$ref: '#/components/schemas/OpenStage'}
+                reason: {type: string, minLength: 1}
+                probability: {$ref: '#/components/schemas/Probability'}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/assign:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: assignOpportunity
+      x-operation: crm.opportunity.assign
+      summary: Change the owner, in any state (OP04)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, owner_id]
+              properties:
+                version: {type: integer}
+                owner_id: {type: string, format: uuid}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/quote-requests:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: requestQuote
+      x-operation: crm.opportunity.edit
+      summary: Ask erp/sales for a quotation draft (OP05); lines given here replace the opportunity's
+      parameters: [{$ref: '#/components/parameters/idempotencyKey'}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                lines: {$ref: '#/components/schemas/Lines'}
+      responses:
+        '200': {description: the request, content: {application/json: {schema: {$ref: '#/components/schemas/QuoteRequest'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/win:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: winOpportunity
+      x-operation: crm.opportunity.close
+      summary: Won (OP06); the won amount is the expected amount when left out
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: {type: integer}
+                won_amount: {$ref: '#/components/schemas/Amount'}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/lose:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: loseOpportunity
+      x-operation: crm.opportunity.close
+      summary: Lost, with a reason (OP06)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, reason]
+              properties:
+                version: {type: integer}
+                reason: {type: string, minLength: 1}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/opportunities/{id}/reopen:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      operationId: reopenOpportunity
+      x-operation: crm.opportunity.close
+      summary: Back to the stage and probability before closing, with a reason (OP07)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, reason]
+              properties:
+                version: {type: integer}
+                reason: {type: string, minLength: 1}
+      responses:
+        '200': {description: the opportunity, content: {application/json: {schema: {$ref: '#/components/schemas/OpportunityRead'}}}}
+        default: {$ref: '#/components/responses/problem'}
+  /api/opportunity/funnel:
+    get:
+      operationId: getFunnel
+      x-operation: crm.opportunity.read
+      summary: The visible opportunities by legal entity, currency and stage; weighted by the stage's probability
+      description: >-
+        All six stages are listed; a won stage counts the won amounts, a lost one weighs 0. The weighted amount is
+        rounded to the currency's minor units. Currencies are not converted. The forecast method is a replacement
+        point (a fork changes how weighted is computed, not this shape).
+      parameters:
+        - {name: legal_entity_id, in: query, schema: {type: string, format: uuid}}
+        - {name: owner_id, in: query, schema: {type: string, format: uuid}}
+        - {name: close_from, in: query, schema: {type: string, format: date}}
+        - {name: close_to, in: query, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: one row per legal entity, currency and stage that has opportunities
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [legal_entity_id, currency, stage, count, amount, weighted]
+                      properties:
+                        legal_entity_id: {type: string, format: uuid}
+                        currency: {type: string}
+                        stage: {$ref: '#/components/schemas/Stage'}
+                        count: {type: integer}
+                        amount: {$ref: '#/components/schemas/Amount'}
+                        weighted: {$ref: '#/components/schemas/Amount'}
+        default: {$ref: '#/components/responses/problem'}
+components:
+  parameters:
+    id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    cursor: {name: cursor, in: query, schema: {type: string}}
+    limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+    idempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+  responses:
+    problem:
+      description: an error (application/problem+json with reason)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    Problem: {type: object, required: [reason], properties: {reason: {type: string}, detail: {type: string}}}
+    Opportunity: {$ref: 'events/crm.opportunity.changed.v1.schema.json'}
+    Stage: {enum: [qualification, needs_analysis, proposal, negotiation, won, lost]}
+    OpenStage: {enum: [qualification, needs_analysis, proposal, negotiation]}
+    Probability: {type: integer, minimum: 0, maximum: 100}
+    Amount: {type: string, pattern: '^[0-9]+(\.[0-9]+)?$'}
+    Lines:
+      type: array
+      maxItems: 100
+      items:
+        type: object
+        additionalProperties: false
+        required: [product_id, quantity, unit]
+        properties:
+          product_id: {type: string, format: uuid}
+          quantity: {type: string, pattern: '^[0-9]+(\.[0-9]+)?$'}
+          unit: {type: string, minLength: 1}
+    StageChange:
+      type: object
+      required: [id, from, to, reason, actor, trigger, at]
+      properties:
+        id: {type: string, format: uuid}
+        from: {oneOf: [{$ref: '#/components/schemas/Stage'}, {type: 'null'}]}
+        to: {$ref: '#/components/schemas/Stage'}
+        reason: {type: [string, 'null']}
+        actor: {type: string, description: 'a principal, or system for an automatic win'}
+        trigger:
+          type: object
+          required: [kind, document_id]
+          properties:
+            kind: {enum: [user, quotation, sales_order]}
+            document_id: {type: [string, 'null'], format: uuid}
+        at: {type: string, format: date-time}
+    QuoteRequest:
+      type: object
+      required: [id, state, lines, quotation_id, reason, requested_by, requested_at]
+      properties:
+        id: {type: string, format: uuid, description: 'the request, and the fact ID of crm.opportunity.quote_requested.v1'}
+        state: {enum: [requested, drafted, rejected]}
+        lines: {$ref: '#/components/schemas/Lines'}
+        quotation_id: {type: [string, 'null'], format: uuid, description: 'the draft erp/sales made'}
+        reason: {type: [string, 'null'], description: 'why erp/sales refused'}
+        requested_by: {type: string}
+        requested_at: {type: string, format: date-time}
+    SalesLink:
+      type: object
+      required: [kind, document_id, number, state, net, currency, version]
+      properties:
+        kind: {enum: [quotation, sales_order]}
+        document_id: {type: string, format: uuid}
+        number: {type: string}
+        state: {type: string, description: 'the document''s state in erp/sales'}
+        net: {$ref: '#/components/schemas/Amount'}
+        currency: {type: string}
+        version: {type: integer}
+    OpportunityRead:
+      allOf:
+        - {$ref: '#/components/schemas/Opportunity'}
+        - type: object
+          required: [stage_history, quote_requests, sales_documents]
+          properties:
+            stage_history: {type: array, items: {$ref: '#/components/schemas/StageChange'}}
+            quote_requests: {type: array, items: {$ref: '#/components/schemas/QuoteRequest'}}
+            sales_documents: {type: array, items: {$ref: '#/components/schemas/SalesLink'}}

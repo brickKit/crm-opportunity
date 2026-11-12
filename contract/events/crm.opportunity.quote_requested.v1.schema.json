@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brickkit.dev/crm-opportunity/events/crm.opportunity.quote_requested.v1.schema.json",
+  "title": "crm.opportunity.quote_requested.v1",
+  "description": "An incremental fact: a quotation is asked for (A71); the fact ID is the request's. erp/sales makes one quotation draft per fact ID, carrying the opportunity and the request, or publishes that it refused the request. The lines are suggestions: sales checks the products and the user adds prices and tax.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fact_id",
+    "opportunity_id",
+    "opportunity_number",
+    "opportunity_name",
+    "legal_entity_id",
+    "customer_id",
+    "currency",
+    "owner_id",
+    "lines",
+    "requested_at"
+  ],
+  "properties": {
+    "fact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "opportunity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "opportunity_number": {
+      "type": "string"
+    },
+    "opportunity_name": {
+      "type": "string"
+    },
+    "legal_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "customer_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_id",
+          "quantity",
+          "unit"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "description": "greater than zero"
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brickkit.dev/crm-opportunity/events/crm.opportunity.lost.v1.schema.json",
+  "title": "crm.opportunity.lost.v1",
+  "description": "An incremental fact: the opportunity was lost (OP06); always by a user.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fact_id",
+    "opportunity_id",
+    "legal_entity_id",
+    "owner_id",
+    "customer_id",
+    "reason",
+    "occurred_at"
+  ],
+  "properties": {
+    "fact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "opportunity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "legal_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "customer_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

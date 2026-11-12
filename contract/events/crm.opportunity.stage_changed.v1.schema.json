@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brickkit.dev/crm-opportunity/events/crm.opportunity.stage_changed.v1.schema.json",
+  "title": "crm.opportunity.stage_changed.v1",
+  "description": "An incremental fact: the opportunity's stage changed (create, advance, revert, win, lose, reopen); the fact ID is the stage change's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fact_id",
+    "opportunity_id",
+    "legal_entity_id",
+    "owner_id",
+    "from",
+    "to",
+    "reason",
+    "trigger",
+    "occurred_at"
+  ],
+  "properties": {
+    "fact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "opportunity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "legal_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "from": {
+      "oneOf": [
+        {
+          "enum": [
+            "qualification",
+            "needs_analysis",
+            "proposal",
+            "negotiation",
+            "won",
+            "lost"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null when created"
+    },
+    "to": {
+      "enum": [
+        "qualification",
+        "needs_analysis",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "document_id"
+      ],
+      "description": "what caused the change: a user's command, or a sales document's event (automatic win, OP08)",
+      "properties": {
+        "kind": {
+          "enum": [
+            "user",
+            "quotation",
+            "sales_order"
+          ]
+        },
+        "document_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid",
+          "description": "the sales document; null for user"
+        }
+      }
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
