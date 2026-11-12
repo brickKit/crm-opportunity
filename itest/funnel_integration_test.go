@@ -59,6 +59,8 @@ func (fx *fixture) funnel() {
 	assert.Len(t, rowsOf(alice, "&owner_id="+dave), 1)
 	soon := rowsOf(alice, "&close_to=2026-12-31")
 	assert.EqualValues(t, 1, soon["qualification"]["count"], "北京二 closes in 2027")
-	code, _ = alice.do("GET", "/api/opportunity/funnel?legal_entity_id=not-a-uuid", nil)
-	assert.Equal(t, 400, code)
+	for _, q := range []string{"legal_entity_id=not-a-uuid", "owner_id=someone", "close_to=31.12.2026"} {
+		code, _ = alice.do("GET", "/api/opportunity/funnel?"+q, nil)
+		assert.Equal(t, 400, code, q)
+	}
 }

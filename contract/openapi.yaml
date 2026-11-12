@@ -244,7 +244,8 @@ paths:
       x-operation: crm.opportunity.read
       summary: The visible opportunities by legal entity, currency and stage; weighted by the stage's probability
       description: >-
-        All six stages are listed; a won stage counts the won amounts, a lost one weighs 0. The weighted amount is
+        One row per legal entity, currency and stage that has opportunities (won and lost too); a won stage counts
+        the won amounts, a lost one weighs 0. The weighted amount is
         rounded to the currency's minor units. Currencies are not converted. The forecast method is a replacement
         point (a fork changes how weighted is computed, not this shape).
       parameters:

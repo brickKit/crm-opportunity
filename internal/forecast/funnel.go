@@ -43,7 +43,7 @@ type Row struct {
 // Funnel is the visible opportunities by legal entity, currency and stage: count, value and weighted value, the
 // weighted rounded to the currency's minor units; currencies are not converted.
 func Funnel(m *core.Base, c *httpx.Context) error {
-	if err := core.QueryFilters(c, []string{"legal_entity_id"}, []string{"close_from", "close_to"}); err != nil {
+	if err := core.QueryFilters(c, []string{"legal_entity_id", "owner_id"}, []string{"close_from", "close_to"}); err != nil {
 		return err
 	}
 	var f []list.Filter

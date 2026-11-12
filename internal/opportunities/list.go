@@ -21,7 +21,7 @@ var opportunityList = list.Spec{Operation: core.OpRead, Alias: "o", IDColumn: "i
 
 // ListOpportunities is one page of the opportunities the caller may see.
 func ListOpportunities(m *core.Base, c *httpx.Context) error {
-	if err := core.QueryFilters(c, []string{"legal_entity_id", "customer_id"}, []string{"close_from", "close_to"}); err != nil {
+	if err := core.QueryFilters(c, []string{"legal_entity_id", "customer_id", "owner_id"}, []string{"close_from", "close_to"}); err != nil {
 		return err
 	}
 	var f []list.Filter
