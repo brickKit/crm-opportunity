@@ -7,7 +7,7 @@ info:
     needs a platform access token and the operation in x-operation; what the caller may not see answers 404. The data
     scope has two dimensions: the legal entity and the owner. Errors are application/problem+json with a reason
     (STATE_CONFLICT, STAGE_ORDER, WON_AMOUNT_LOCKED, CUSTOMER_NOT_ELIGIBLE, REFERENCE_INVALID, DEPENDENCY_UNAVAILABLE,
-    VERSION_CONFLICT, VALIDATION_FAILED). Lists page by cursor only (protocol 14). Amounts are decimal strings in the
+    VERSION_CONFLICT, REQUEST_INVALID). Lists page by cursor only (protocol 14). Amounts are decimal strings in the
     opportunity's currency. Creating and requesting a quote need an Idempotency-Key header. The rules (OP01-OP08) are in
     the component's docs/design.md.
 paths:
