@@ -14,7 +14,7 @@
 | `opportunity/migrations/` | 表，整个组件一套 |
 | `contract/` | 本组件发布的契约：`contract/events/`、`contract/openapi.yaml`（没有系统面的 proto） |
 | `docs/` | 设计（规则的正文；各层的 `AGENTS.md` 只指过去，不抄） |
-| `cmd/seed/` | 种子（`make seed`） |
+| `cmd/seed/` | 种子（`make seed`）：角色（维护、只管自己的销售、CN01 的销售主管）；CN01 220、ES01 40、US01 30 个商机，每个阶段都有，含赢单、输单与重开；部分方案报价阶段的商机发请求报价 |
 
 业务模块（`internal/` 下）：
 

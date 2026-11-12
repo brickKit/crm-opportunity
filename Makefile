@@ -13,4 +13,5 @@ seed:  ## the seed data for people, through the running component's user surface
 	$(MAKE) -C ../../mdm/org seed   # the declared dependencies first (seed and test data conventions)
 	$(MAKE) -C ../../mdm/partner seed
 	$(MAKE) -C ../../mdm/currency seed
+	$(MAKE) -C ../../mdm/product seed  # the products the opportunities suggest (not a dependency: read for the seed)
 	go run ./cmd/seed
