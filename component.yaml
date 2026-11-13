@@ -4,15 +4,15 @@ kind: Component
 metadata:
   id: crm/opportunity
   name: Opportunity
-  version: 3.0.10
+  version: 3.0.11
   description: "Opportunities from first contact to won or lost: the stages of one pipeline, forecast amounts and probabilities (the funnel), quote requests that erp/sales answers with quotation drafts, and the quotations and orders that come back and may win the opportunity; CRM and ERP only meet by events (A71)"
   repository: https://github.com/brickKit/crm-opportunity
 
 dependencies:
   components:
-    - mdm/currency@3.0.41
-    - mdm/org@3.0.43
-    - mdm/partner@3.0.48
+    - mdm/currency@3.0.42
+    - mdm/org@3.0.44
+    - mdm/partner@3.0.49
 
 events:
   publishes:
